@@ -1,0 +1,42 @@
+<script setup>
+const props = defineProps({
+  user: {
+    type: Object,
+    default: null
+  },
+  providers: {
+    type: Array,
+    default: () => []
+  }
+})
+
+const emit = defineEmits(['login', 'logout'])
+
+const onLogin = (provider) => {
+  emit('login', provider)
+}
+
+const onLogout = () => {
+  emit('logout')
+}
+</script>
+
+<template>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand__title">ATMO.SCOPE</span>
+      <span class="brand__tag">대기 + 날씨 통합 모니터링</span>
+    </div>
+    <div class="auth">
+      <div v-if="props.user" class="auth__user">
+        <span>{{ props.user.name || props.user.email || props.user.id }}</span>
+        <button class="ghost" @click="onLogout">로그아웃</button>
+      </div>
+      <div v-else class="auth__buttons">
+        <button v-for="p in props.providers" :key="p.key" class="pill" @click="onLogin(p.key)">
+          {{ p.label }} 로그인
+        </button>
+      </div>
+    </div>
+  </header>
+</template>
