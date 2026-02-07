@@ -33,8 +33,19 @@ const onLogout = () => {
         <button class="ghost" @click="onLogout">로그아웃</button>
       </div>
       <div v-else class="auth__buttons">
-        <button v-for="p in props.providers" :key="p.key" class="pill" @click="onLogin(p.key)">
-          {{ p.label }} 로그인
+        <button
+          v-for="p in props.providers"
+          :key="p.key"
+          class="pill auth__button"
+          :class="`auth__button--${p.theme || p.key}`"
+          @click="onLogin(p.key)"
+        >
+          <span
+            class="auth__logo"
+            :class="`auth__logo--${p.theme || p.key}`"
+            aria-hidden="true"
+          ></span>
+          <span>{{ p.label }} 로그인</span>
         </button>
       </div>
     </div>

@@ -36,9 +36,9 @@ const statusMessage = ref('')
 const isAuthenticated = computed(() => Boolean(accessToken.value))
 
 const providers = [
-  { key: 'kakao', label: '카카오' },
-  { key: 'google', label: '구글' },
-  { key: 'naver', label: '네이버' }
+  { key: 'kakao', label: '카카오', theme: 'kakao' },
+  { key: 'google', label: '구글', theme: 'google' },
+  { key: 'naver', label: '네이버', theme: 'naver' }
 ]
 
 const authHeader = computed(() =>
@@ -63,9 +63,14 @@ const apiFetch = async (path, options = {}) => {
 }
 
 const login = async (provider) => {
-  const returnTo = `${window.location.origin}${window.location.pathname}`
-  const data = await apiFetch(`/auth/oauth/${provider}/authorize-url?returnTo=${encodeURIComponent(returnTo)}`)
-  window.location.href = data.authorizeUrl
+  try {
+    const returnTo = `${window.location.origin}${window.location.pathname}`
+    const data = await apiFetch(`/auth/oauth/${provider}/authorize-url?returnTo=${encodeURIComponent(returnTo)}`)
+    window.location.href = data.authorizeUrl
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '로그인 요청에 실패했습니다.'
+    setStatus(message)
+  }
 }
 
 const logout = async () => {
