@@ -7,6 +7,10 @@ const props = defineProps({
   providers: {
     type: Array,
     default: () => []
+  },
+  authLoading: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -28,11 +32,14 @@ const onLogout = () => {
       <span class="brand__tag">대기 + 날씨 통합 모니터링</span>
     </div>
     <div class="auth">
-      <div v-if="props.user" class="auth__user">
-        <span>{{ props.user.name || props.user.email || props.user.id }}</span>
+      <div v-if="props.authLoading" class="auth__pending">
+        <span>로그인 상태 확인 중...</span>
+      </div>
+      <div v-else-if="props.user" class="auth__user">
+        <span>{{ props.user.displayName || props.user.name || props.user.email || '사용자' }}</span>
         <button class="ghost" @click="onLogout">로그아웃</button>
       </div>
-      <div v-else class="auth__buttons">
+      <div v-else-if="!props.authLoading" class="auth__buttons">
         <button
           v-for="p in props.providers"
           :key="p.key"

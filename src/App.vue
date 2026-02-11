@@ -17,6 +17,7 @@ const lastPolygonKey = ref('')
 
 const loading = ref(false)
 const user = ref(null)
+const authLoading = ref(true)
 const accessToken = ref(localStorage.getItem('accessToken') || '')
 
 const showPolygons = ref(false)
@@ -42,6 +43,27 @@ const providers = [
 const authHeader = computed(() =>
   accessToken.value ? { Authorization: `Bearer ${accessToken.value}` } : {}
 )
+
+const providerDisplayMap = {
+  kakao: '카카오',
+  google: '구글',
+  naver: '네이버'
+}
+
+const normalizeUser = (raw) => {
+  if (!raw || raw.authenticated !== true) return null
+  const name = typeof raw.name === 'string' ? raw.name.trim() : ''
+  const email = typeof raw.email === 'string' ? raw.email.trim() : ''
+  const provider = typeof raw.provider === 'string' ? raw.provider.toLowerCase() : ''
+  const providerLabel = providerDisplayMap[provider] || '소셜'
+  const emailPrefix = email.includes('@') ? email.split('@')[0] : email
+  const displayName = name || emailPrefix || `${providerLabel} 사용자`
+  return {
+    ...raw,
+    provider,
+    displayName
+  }
+}
 
 const apiFetch = async (path, options = {}) => {
   const url = `${API_BASE}${path}`
@@ -103,14 +125,13 @@ const refreshAccessToken = async () => {
 }
 
 const loadMe = async () => {
-  if (!accessToken.value) return
+  if (!accessToken.value) {
+    user.value = null
+    return
+  }
   try {
     const data = await apiFetch('/me')
-    if (data.authenticated) {
-      user.value = data
-    } else {
-      user.value = null
-    }
+    user.value = normalizeUser(data)
   } catch {
     user.value = null
   }
@@ -192,8 +213,13 @@ const loadStations = async () => {
 }
 
 const loadStationDetail = async (stationId) => {
-  selectedStation.value = await apiFetch(`/stations/${stationId}`)
-  const data = await apiFetch(`/stations/${stationId}/forecast?hours=${forecastRange.value}`)
+  const resolvedId = Number(stationId)
+  if (!Number.isFinite(resolvedId) || resolvedId <= 0) {
+    setStatus('측정소 식별자를 확인할 수 없습니다.')
+    return
+  }
+  selectedStation.value = await apiFetch(`/stations/${resolvedId}`)
+  const data = await apiFetch(`/stations/${resolvedId}/forecast?hours=${forecastRange.value}`)
   forecastHours.value = trimForecastByRange(data, forecastRange.value)
 }
 
@@ -264,12 +290,13 @@ const renderStationMarkers = (items) => {
     ...items
       .filter((item) => item?.lat != null && item?.lng != null)
       .map((item) => {
+    const stationId = item.id ?? item.stationId
     const marker = new window.kakao.maps.Marker({
       map: map.value,
       position: new window.kakao.maps.LatLng(item.lat, item.lng)
     })
     window.kakao.maps.event.addListener(marker, 'click', () => {
-      loadStationDetail(item.stationId)
+      loadStationDetail(stationId)
     })
     return marker
   })
@@ -385,6 +412,7 @@ const formatPrecipType = (value) => {
 }
 
 onMounted(async () => {
+  authLoading.value = true
   if (window.location.hash.includes('access_token=')) {
     const hash = new URLSearchParams(window.location.hash.replace('#', ''))
     const token = hash.get('access_token')
@@ -394,10 +422,16 @@ onMounted(async () => {
       window.history.replaceState({}, document.title, window.location.pathname)
     }
   }
-  if (accessToken.value) {
-    await refreshAccessToken()
-    await loadMe()
-    await loadFavorites()
+  try {
+    if (accessToken.value) {
+      await refreshAccessToken()
+      await loadMe()
+      await loadFavorites()
+    } else {
+      user.value = null
+    }
+  } finally {
+    authLoading.value = false
   }
   await initialize()
 })
@@ -405,7 +439,7 @@ onMounted(async () => {
 
 <template>
   <div class="app">
-    <TopBar :user="user" :providers="providers" @login="login" @logout="logout" />
+    <TopBar :user="user" :providers="providers" :auth-loading="authLoading" @login="login" @logout="logout" />
 
     <main class="layout">
       <section class="panel">
