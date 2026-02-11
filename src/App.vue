@@ -7,6 +7,7 @@ import DashboardPanel from './components/DashboardPanel.vue'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 const KAKAO_KEY = import.meta.env.VITE_KAKAO_APP_KEY || ''
+const FORECAST_API_HORIZON_HOURS = 6
 
 const mapEl = ref(null)
 const map = ref(null)
@@ -26,7 +27,8 @@ const showStations = ref(true)
 const stations = ref([])
 const selectedStation = ref(null)
 const forecastHours = ref([])
-const forecastRange = ref(12)
+const allForecastHours = ref([])
+const forecastRange = ref(FORECAST_API_HORIZON_HOURS)
 const favoriteForecastRange = 6
 const favorites = ref([])
 const favoriteCards = ref([])
@@ -50,17 +52,29 @@ const providerDisplayMap = {
   naver: '네이버'
 }
 
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const isOpaqueName = (value) => {
+  if (typeof value !== 'string') return false
+  const trimmed = value.trim()
+  if (!trimmed) return false
+  if (uuidPattern.test(trimmed)) return true
+  return /^[0-9]{10,}$/.test(trimmed)
+}
+
 const normalizeUser = (raw) => {
   if (!raw || raw.authenticated !== true) return null
   const name = typeof raw.name === 'string' ? raw.name.trim() : ''
+  const safeName = isOpaqueName(name) ? '' : name
   const email = typeof raw.email === 'string' ? raw.email.trim() : ''
   const provider = typeof raw.provider === 'string' ? raw.provider.toLowerCase() : ''
   const providerLabel = providerDisplayMap[provider] || '소셜'
-  const emailPrefix = email.includes('@') ? email.split('@')[0] : email
-  const displayName = name || emailPrefix || `${providerLabel} 사용자`
+  const emailPrefix = email.includes('@') ? email.split('@')[0] : ''
+  const displayName = safeName || emailPrefix || `${providerLabel} 계정`
   return {
     ...raw,
     provider,
+    providerLabel,
     displayName
   }
 }
@@ -170,6 +184,19 @@ const trimForecastByRange = (items, hours) => {
     })
 }
 
+const forecastRangeOptions = computed(() => {
+  return [FORECAST_API_HORIZON_HOURS]
+})
+
+const forecastAvailability = computed(() => {
+  const entries = forecastRangeOptions.value.map((hours) => [hours, trimForecastByRange(allForecastHours.value, hours).length])
+  return Object.fromEntries(entries)
+})
+
+const applyForecastRange = (hours) => {
+  forecastHours.value = trimForecastByRange(allForecastHours.value, hours)
+}
+
 const formatTemperature = (value) => {
   if (value === null || value === undefined || value === '') return '-'
   const num = Number(value)
@@ -177,6 +204,13 @@ const formatTemperature = (value) => {
   const rounded = Math.round(num * 10) / 10
   if (Number.isInteger(rounded)) return String(rounded)
   return rounded.toFixed(1)
+}
+
+const formatWindSpeed = (value) => {
+  if (value === null || value === undefined || value === '') return '-'
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  return (Math.round(num * 10) / 10).toFixed(1)
 }
 
 const addFavorite = async () => {
@@ -219,16 +253,14 @@ const loadStationDetail = async (stationId) => {
     return
   }
   selectedStation.value = await apiFetch(`/stations/${resolvedId}`)
-  const data = await apiFetch(`/stations/${resolvedId}/forecast?hours=${forecastRange.value}`)
-  forecastHours.value = trimForecastByRange(data, forecastRange.value)
+  const data = await apiFetch(`/stations/${resolvedId}/forecast?hours=${FORECAST_API_HORIZON_HOURS}`)
+  allForecastHours.value = Array.isArray(data) ? data : []
+  applyForecastRange(forecastRange.value)
 }
 
-const setForecastRange = async (hours) => {
+const setForecastRange = (hours) => {
   forecastRange.value = hours
-  if (selectedStation.value?.id) {
-    const data = await apiFetch(`/stations/${selectedStation.value.id}/forecast?hours=${hours}`)
-    forecastHours.value = trimForecastByRange(data, hours)
-  }
+  applyForecastRange(hours)
 }
 
 const setStatus = (msg) => {
@@ -246,10 +278,25 @@ const initKakao = () => new Promise((resolve, reject) => {
     reject(new Error('Kakao API key가 없습니다. VITE_KAKAO_APP_KEY를 설정하세요.'))
     return
   }
+
+  const ready = () => window.kakao.maps.load(resolve)
+  const scriptId = 'kakao-map-sdk'
+  const existing = document.getElementById(scriptId)
+  if (existing) {
+    if (window.kakao && window.kakao.maps) {
+      ready()
+      return
+    }
+    existing.addEventListener('load', ready, { once: true })
+    existing.addEventListener('error', reject, { once: true })
+    return
+  }
+
   const script = document.createElement('script')
-  script.src = `//dapi.kakao.com/v2/maps/sdk.js?autoload=false&appkey=${KAKAO_KEY}`
-  script.onload = () => window.kakao.maps.load(resolve)
-  script.onerror = reject
+  script.id = scriptId
+  script.src = `https://dapi.kakao.com/v2/maps/sdk.js?autoload=false&appkey=${KAKAO_KEY}`
+  script.addEventListener('load', ready, { once: true })
+  script.addEventListener('error', reject, { once: true })
   document.head.appendChild(script)
 })
 
@@ -430,6 +477,9 @@ onMounted(async () => {
     } else {
       user.value = null
     }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '로그인 정보를 확인하는 중 오류가 발생했습니다.'
+    setStatus(message)
   } finally {
     authLoading.value = false
   }
@@ -486,6 +536,9 @@ onMounted(async () => {
           :format-forecast-time="formatForecastTime"
           :format-precip-type="formatPrecipType"
           :format-temperature="formatTemperature"
+          :format-wind-speed="formatWindSpeed"
+          :forecast-availability="forecastAvailability"
+          :forecast-range-options="forecastRangeOptions"
           @add-favorite="addFavorite"
           @set-forecast-range="setForecastRange"
         />
@@ -499,6 +552,7 @@ onMounted(async () => {
           :format-forecast-time="formatForecastTime"
           :format-precip-type="formatPrecipType"
           :format-temperature="formatTemperature"
+          :format-wind-speed="formatWindSpeed"
         />
       </section>
 

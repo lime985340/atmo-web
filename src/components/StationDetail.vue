@@ -12,6 +12,14 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  forecastAvailability: {
+    type: Object,
+    default: () => ({})
+  },
+  forecastRangeOptions: {
+    type: Array,
+    default: () => [6]
+  },
   isAuthenticated: {
     type: Boolean,
     required: true
@@ -25,6 +33,10 @@ const props = defineProps({
     required: true
   },
   formatTemperature: {
+    type: Function,
+    required: true
+  },
+  formatWindSpeed: {
     type: Function,
     required: true
   }
@@ -68,44 +80,44 @@ const onSetForecastRange = (hours) => {
       <button class="primary" @click="onAddFavorite" :disabled="!props.isAuthenticated">
         즐겨찾기 추가
       </button>
-      <div class="forecast" v-if="props.forecastHours.length">
+      <div class="forecast">
         <div class="forecast__header">
           <h3>시간대 예보 ({{ props.forecastRange }}시간)</h3>
           <div class="forecast__range">
             <button
+              v-for="hours in props.forecastRangeOptions"
+              :key="hours"
               class="ghost"
-              :class="{ active: props.forecastRange === 6 }"
-              @click="onSetForecastRange(6)"
+              :class="{ active: props.forecastRange === hours }"
+              :disabled="(props.forecastAvailability[hours] || 0) === 0"
+              @click="onSetForecastRange(hours)"
             >
-              6H
-            </button>
-            <button
-              class="ghost"
-              :class="{ active: props.forecastRange === 12 }"
-              @click="onSetForecastRange(12)"
-            >
-              12H
-            </button>
-            <button
-              class="ghost"
-              :class="{ active: props.forecastRange === 24 }"
-              @click="onSetForecastRange(24)"
-            >
-              24H
+              {{ hours }}H <span class="forecast__count">{{ props.forecastAvailability[hours] || 0 }}</span>
             </button>
           </div>
         </div>
-        <div class="forecast__table">
+        <p class="forecast__source">예보 데이터 출처: DB `weather_forecasts` (강수량/강수확률 포함)</p>
+        <div class="forecast__table" v-if="props.forecastHours.length">
+          <div class="forecast__row forecast__row--head" aria-hidden="true">
+            <span class="forecast__meta">시간</span>
+            <span class="forecast__meta">기온</span>
+            <span class="forecast__meta">습도</span>
+            <span class="forecast__meta">풍속</span>
+            <span class="forecast__meta">강수형태</span>
+            <span class="forecast__meta">강수량</span>
+            <span class="forecast__meta">강수확률</span>
+          </div>
           <div class="forecast__row" v-for="hour in props.forecastHours" :key="hour.forecastAt">
             <span class="forecast__time">{{ props.formatForecastTime(hour.forecastAt) }}</span>
             <span class="forecast__temp">{{ props.formatTemperature(hour.tempC) }}°C</span>
-            <span class="forecast__meta">습도 {{ hour.humidity ?? '-' }}%</span>
-            <span class="forecast__meta">풍속 {{ hour.windSpeed ?? '-' }}m/s</span>
-            <span class="forecast__meta">강수 {{ props.formatPrecipType(hour.precipType) }}</span>
-            <span class="forecast__meta">강수량 {{ hour.precipMm ?? '-' }}mm</span>
-            <span class="forecast__meta">강수확률 {{ hour.pop ?? '-' }}%</span>
+            <span class="forecast__meta">{{ hour.humidity ?? '-' }}%</span>
+            <span class="forecast__meta">{{ props.formatWindSpeed(hour.windSpeed) }}m/s</span>
+            <span class="forecast__meta">{{ props.formatPrecipType(hour.precipType) }}</span>
+            <span class="forecast__meta">{{ hour.precipMm ?? '-' }}mm</span>
+            <span class="forecast__meta">{{ hour.pop ?? '-' }}%</span>
           </div>
         </div>
+        <p class="forecast__empty" v-else>선택한 시간대에 예보 데이터가 없습니다. 다른 시간 범위를 선택해 주세요.</p>
       </div>
     </div>
   </div>

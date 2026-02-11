@@ -19,6 +19,10 @@ const props = defineProps({
   formatTemperature: {
     type: Function,
     required: true
+  },
+  formatWindSpeed: {
+    type: Function,
+    required: true
   }
 })
 </script>
@@ -50,12 +54,14 @@ const props = defineProps({
         </div>
         <div class="forecast forecast--compact" v-if="card.forecastHours?.length">
           <h3>예보 (6시간)</h3>
-          <div class="forecast__row" v-for="hour in props.limitedForecast(card.forecastHours)" :key="hour.forecastAt">
-            <span class="forecast__time">{{ props.formatForecastTime(hour.forecastAt) }}</span>
-            <span class="forecast__temp">{{ props.formatTemperature(hour.tempC) }}°C</span>
-            <span class="forecast__meta">풍속 {{ hour.windSpeed ?? '-' }}m/s</span>
-            <span class="forecast__meta">강수 {{ props.formatPrecipType(hour.precipType) }}</span>
-            <span class="forecast__meta">{{ hour.pop ?? '-' }}%</span>
+          <div class="forecast__table">
+            <div class="forecast__row" v-for="hour in props.limitedForecast(card.forecastHours)" :key="hour.forecastAt">
+              <span class="forecast__time">{{ props.formatForecastTime(hour.forecastAt) }}</span>
+              <span class="forecast__temp">{{ props.formatTemperature(hour.tempC) }}°C</span>
+              <span class="forecast__meta">풍속 {{ props.formatWindSpeed(hour.windSpeed) }}m/s</span>
+              <span class="forecast__meta">강수 {{ props.formatPrecipType(hour.precipType) }}</span>
+              <span class="forecast__meta">{{ hour.pop ?? '-' }}%</span>
+            </div>
           </div>
         </div>
         <p class="stale" v-if="card.stale">데이터 갱신 지연</p>

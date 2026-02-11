@@ -23,6 +23,12 @@ const onLogin = (provider) => {
 const onLogout = () => {
   emit('logout')
 }
+
+const userProviderLabel = (user) => {
+  const provider = user?.providerLabel || user?.provider || ''
+  if (!provider) return '연동 계정'
+  return `${provider} 연동`
+}
 </script>
 
 <template>
@@ -36,7 +42,8 @@ const onLogout = () => {
         <span>로그인 상태 확인 중...</span>
       </div>
       <div v-else-if="props.user" class="auth__user">
-        <span>{{ props.user.displayName || props.user.name || props.user.email || '사용자' }}</span>
+        <span class="auth__provider">{{ userProviderLabel(props.user) }}</span>
+        <span class="auth__name">{{ props.user.displayName || props.user.name || props.user.email || '사용자' }}</span>
         <button class="ghost" @click="onLogout">로그아웃</button>
       </div>
       <div v-else-if="!props.authLoading" class="auth__buttons">
