@@ -96,7 +96,6 @@ const onSetForecastRange = (hours) => {
             </button>
           </div>
         </div>
-        <p class="forecast__source">예보 데이터 출처: DB `weather_forecasts` (강수량/강수확률 포함)</p>
         <div class="forecast__table" v-if="props.forecastHours.length">
           <div class="forecast__row forecast__row--head" aria-hidden="true">
             <span class="forecast__meta">시간</span>

@@ -20,6 +20,7 @@ const loading = ref(false)
 const user = ref(null)
 const authLoading = ref(true)
 const accessToken = ref(localStorage.getItem('accessToken') || '')
+const deletingFavoriteIds = ref([])
 
 const showPolygons = ref(false)
 const showStations = ref(true)
@@ -79,7 +80,7 @@ const normalizeUser = (raw) => {
   }
 }
 
-const apiFetch = async (path, options = {}) => {
+const apiFetch = async (path, options = {}, allowRetry = true) => {
   const url = `${API_BASE}${path}`
   const res = await fetch(url, {
     ...options,
@@ -89,6 +90,12 @@ const apiFetch = async (path, options = {}) => {
       ...(options.headers || {})
     }
   })
+  if (res.status === 401 && allowRetry && path !== '/auth/refresh' && accessToken.value) {
+    await refreshAccessToken()
+    if (accessToken.value) {
+      return apiFetch(path, options, false)
+    }
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.error || `요청 실패 (${res.status})`)
@@ -153,8 +160,13 @@ const loadMe = async () => {
 
 const loadFavorites = async () => {
   if (!accessToken.value) return
-  favorites.value = await apiFetch('/favorites')
-  favoriteCards.value = await apiFetch('/favorites/dashboard')
+  try {
+    favorites.value = await apiFetch('/favorites')
+    favoriteCards.value = await apiFetch('/favorites/dashboard')
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '즐겨찾기 데이터를 불러오지 못했습니다.'
+    setStatus(message)
+  }
 }
 
 const limitedForecast = (items, limit = favoriteForecastRange) => {
@@ -228,8 +240,19 @@ const addFavorite = async () => {
 }
 
 const removeFavorite = async (favoriteId) => {
-  await apiFetch(`/favorites/${favoriteId}`, { method: 'DELETE' })
-  await loadFavorites()
+  if (deletingFavoriteIds.value.includes(favoriteId)) return
+  deletingFavoriteIds.value = [...deletingFavoriteIds.value, favoriteId]
+  try {
+    await apiFetch(`/favorites/${favoriteId}`, { method: 'DELETE' })
+    favorites.value = favorites.value.filter((favorite) => favorite.id !== favoriteId)
+    favoriteCards.value = favoriteCards.value.filter((card) => card.id !== favoriteId)
+    await loadFavorites()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '즐겨찾기 삭제에 실패했습니다.'
+    setStatus(message)
+  } finally {
+    deletingFavoriteIds.value = deletingFavoriteIds.value.filter((id) => id !== favoriteId)
+  }
 }
 
 const loadStations = async () => {
@@ -241,7 +264,7 @@ const loadStations = async () => {
     return
   }
   const { swLat, swLng, neLat, neLng } = snapshot
-  const data = await apiFetch(`/stations/bbox?swLat=${swLat}&swLng=${swLng}&neLat=${neLat}&neLng=${neLng}&limit=500`)
+  const data = await apiFetch(`/stations/bbox?swLat=${swLat}&swLng=${swLng}&neLat=${neLat}&neLng=${neLng}&limit=300`)
   stations.value = data.stations || []
   renderStationMarkers(stations.value)
 }
@@ -543,7 +566,12 @@ onMounted(async () => {
           @set-forecast-range="setForecastRange"
         />
 
-        <FavoritesList v-if="favorites.length" :favorites="favorites" @remove="removeFavorite" />
+        <FavoritesList
+          v-if="favorites.length"
+          :favorites="favorites"
+          :deleting-ids="deletingFavoriteIds"
+          @remove="removeFavorite"
+        />
 
         <DashboardPanel
           v-if="favoriteCards.length"
@@ -562,5 +590,14 @@ onMounted(async () => {
         <div class="map__status error" v-if="statusMessage">{{ statusMessage }}</div>
       </section>
     </main>
+
+    <div v-if="authLoading" class="auth-modal" role="dialog" aria-modal="true" aria-live="polite">
+      <div class="auth-modal__backdrop"></div>
+      <div class="auth-modal__panel">
+        <span class="auth-modal__spinner" aria-hidden="true"></span>
+        <p class="auth-modal__title">로그인 확인 중입니다</p>
+        <p class="auth-modal__desc">계정 상태를 안전하게 확인하고 있어요. 잠시만 기다려 주세요.</p>
+      </div>
+    </div>
   </div>
 </template>

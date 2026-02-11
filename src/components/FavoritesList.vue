@@ -3,6 +3,10 @@ const props = defineProps({
   favorites: {
     type: Array,
     default: () => []
+  },
+  deletingIds: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -22,7 +26,9 @@ const onRemove = (favoriteId) => {
           <p class="list__title">{{ fav.name }}</p>
           <p class="list__meta">{{ fav.stationName || '측정소 미연결' }}</p>
         </div>
-        <button class="ghost" @click="onRemove(fav.id)">삭제</button>
+        <button class="ghost" :disabled="props.deletingIds.includes(fav.id)" @click="onRemove(fav.id)">
+          {{ props.deletingIds.includes(fav.id) ? '삭제 중...' : '삭제' }}
+        </button>
       </div>
     </div>
   </div>
