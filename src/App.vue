@@ -10,8 +10,7 @@ const KAKAO_KEY = import.meta.env.VITE_KAKAO_APP_KEY || ''
 
 const mapEl = ref(null)
 const map = ref(null)
-const airMarkers = ref([])
-const weatherMarkers = ref([])
+const stationMarkers = ref([])
 const polygonOverlays = ref([])
 const polygonCache = new Map()
 const lastPolygonKey = ref('')
@@ -21,8 +20,7 @@ const user = ref(null)
 const accessToken = ref(localStorage.getItem('accessToken') || '')
 
 const showPolygons = ref(false)
-const showAir = ref(true)
-const showWeather = ref(true)
+const showStations = ref(true)
 
 const stations = ref([])
 const selectedStation = ref(null)
@@ -129,6 +127,37 @@ const limitedForecast = (items, limit = favoriteForecastRange) => {
   return items.slice(0, limit)
 }
 
+const parseForecastTime = (value) => {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+const trimForecastByRange = (items, hours) => {
+  if (!Array.isArray(items)) return []
+  const nowMs = Date.now()
+  const untilMs = nowMs + hours * 60 * 60 * 1000
+  return items
+    .filter((hour) => {
+      const parsed = parseForecastTime(hour?.forecastAt)
+      if (!parsed) return true
+      return parsed.getTime() <= untilMs
+    })
+    .sort((a, b) => {
+      const ta = parseForecastTime(a?.forecastAt)?.getTime() ?? Number.MAX_SAFE_INTEGER
+      const tb = parseForecastTime(b?.forecastAt)?.getTime() ?? Number.MAX_SAFE_INTEGER
+      return ta - tb
+    })
+}
+
+const formatTemperature = (value) => {
+  if (value === null || value === undefined || value === '') return '-'
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  const rounded = Math.round(num * 10) / 10
+  if (Number.isInteger(rounded)) return String(rounded)
+  return rounded.toFixed(1)
+}
+
 const addFavorite = async () => {
   if (!selectedStation.value) return
   const payload = {
@@ -153,22 +182,26 @@ const loadStations = async () => {
   if (!snapshot) {
     const data = await apiFetch('/stations')
     stations.value = data.stations || []
+    renderStationMarkers(stations.value)
     return
   }
   const { swLat, swLng, neLat, neLng } = snapshot
   const data = await apiFetch(`/stations/bbox?swLat=${swLat}&swLng=${swLng}&neLat=${neLat}&neLng=${neLng}&limit=500`)
   stations.value = data.stations || []
+  renderStationMarkers(stations.value)
 }
 
 const loadStationDetail = async (stationId) => {
   selectedStation.value = await apiFetch(`/stations/${stationId}`)
-  forecastHours.value = await apiFetch(`/stations/${stationId}/forecast?hours=${forecastRange.value}`)
+  const data = await apiFetch(`/stations/${stationId}/forecast?hours=${forecastRange.value}`)
+  forecastHours.value = trimForecastByRange(data, forecastRange.value)
 }
 
 const setForecastRange = async (hours) => {
   forecastRange.value = hours
   if (selectedStation.value?.id) {
-    forecastHours.value = await apiFetch(`/stations/${selectedStation.value.id}/forecast?hours=${hours}`)
+    const data = await apiFetch(`/stations/${selectedStation.value.id}/forecast?hours=${hours}`)
+    forecastHours.value = trimForecastByRange(data, hours)
   }
 }
 
@@ -195,8 +228,18 @@ const initKakao = () => new Promise((resolve, reject) => {
 })
 
 const clearMarkers = (list) => {
-  list.forEach((m) => m.setMap(null))
+  list.forEach((m) => {
+    m.setMap(null)
+  })
   list.length = 0
+}
+
+const toggleStationMarkers = () => {
+  if (!showStations.value) {
+    clearMarkers(stationMarkers.value)
+    return
+  }
+  renderStationMarkers(stations.value)
 }
 
 const getMapSnapshot = () => {
@@ -214,38 +257,13 @@ const getMapSnapshot = () => {
   }
 }
 
-const fetchMarkers = async () => {
-  const snapshot = getMapSnapshot()
-  if (!snapshot) return
-  const { level, swLat, swLng, neLat, neLng } = snapshot
-  const bbox = [swLat, swLng, neLat, neLng].join(',')
-
-  loading.value = true
-  try {
-    if (showAir.value) {
-      const air = await apiFetch(`/map/air-markers?bbox=${bbox}&level=${level}`)
-      clearMarkers(airMarkers.value)
-      airMarkers.value.push(...renderAirMarkers(air))
-    } else {
-      clearMarkers(airMarkers.value)
-    }
-
-    if (showWeather.value) {
-      const weather = await apiFetch(`/map/weather-markers?bbox=${bbox}&level=${level}`)
-      clearMarkers(weatherMarkers.value)
-      weatherMarkers.value.push(...renderWeatherMarkers(weather))
-    } else {
-      clearMarkers(weatherMarkers.value)
-    }
-  } catch (err) {
-    setStatus(err.message)
-  } finally {
-    loading.value = false
-  }
-}
-
-const renderAirMarkers = (items) => {
-  return items.map((item) => {
+const renderStationMarkers = (items) => {
+  clearMarkers(stationMarkers.value)
+  if (!showStations.value || !Array.isArray(items) || items.length === 0) return
+  stationMarkers.value.push(
+    ...items
+      .filter((item) => item?.lat != null && item?.lng != null)
+      .map((item) => {
     const marker = new window.kakao.maps.Marker({
       map: map.value,
       position: new window.kakao.maps.LatLng(item.lat, item.lng)
@@ -255,21 +273,13 @@ const renderAirMarkers = (items) => {
     })
     return marker
   })
-}
-
-const renderWeatherMarkers = (items) => {
-  return items.map((item) => {
-    const marker = new window.kakao.maps.Marker({
-      map: map.value,
-      position: new window.kakao.maps.LatLng(item.lat, item.lng),
-      opacity: 0.6
-    })
-    return marker
-  })
+  )
 }
 
 const clearPolygons = () => {
-  polygonOverlays.value.forEach((p) => p.setMap(null))
+  polygonOverlays.value.forEach((p) => {
+    p.setMap(null)
+  })
   polygonOverlays.value = []
 }
 
@@ -344,7 +354,6 @@ const initialize = async () => {
       level: 7
     })
     window.kakao.maps.event.addListener(map.value, 'idle', () => {
-      fetchMarkers()
       loadStations()
       if (showPolygons.value) {
         loadPolygons()
@@ -425,12 +434,8 @@ onMounted(async () => {
         <div class="panel__section">
           <h2>지도 레이어</h2>
           <label class="toggle">
-            <input type="checkbox" v-model="showAir" @change="fetchMarkers" />
-            <span>대기질 마커</span>
-          </label>
-          <label class="toggle">
-            <input type="checkbox" v-model="showWeather" @change="fetchMarkers" />
-            <span>날씨 마커</span>
+            <input type="checkbox" v-model="showStations" @change="toggleStationMarkers" />
+            <span>측정소 마커</span>
           </label>
           <label class="toggle">
             <input type="checkbox" v-model="showPolygons" @change="loadPolygons" />
@@ -446,6 +451,7 @@ onMounted(async () => {
           :is-authenticated="isAuthenticated"
           :format-forecast-time="formatForecastTime"
           :format-precip-type="formatPrecipType"
+          :format-temperature="formatTemperature"
           @add-favorite="addFavorite"
           @set-forecast-range="setForecastRange"
         />
@@ -458,6 +464,7 @@ onMounted(async () => {
           :limited-forecast="limitedForecast"
           :format-forecast-time="formatForecastTime"
           :format-precip-type="formatPrecipType"
+          :format-temperature="formatTemperature"
         />
       </section>
 

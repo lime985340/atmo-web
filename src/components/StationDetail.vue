@@ -23,6 +23,10 @@ const props = defineProps({
   formatPrecipType: {
     type: Function,
     required: true
+  },
+  formatTemperature: {
+    type: Function,
+    required: true
   }
 })
 
@@ -45,16 +49,16 @@ const onSetForecastRange = (hours) => {
       <p class="card__meta">{{ props.selectedStation.addr || '주소 없음' }}</p>
       <div class="grid">
         <div>
-          <span class="label">PM10</span>
+          <span class="label">미세먼지 (PM10)</span>
           <strong>{{ props.selectedStation.air?.pm10 ?? '-' }}</strong>
         </div>
         <div>
-          <span class="label">PM2.5</span>
+          <span class="label">초미세먼지 (PM2.5)</span>
           <strong>{{ props.selectedStation.air?.pm25 ?? '-' }}</strong>
         </div>
         <div>
           <span class="label">온도</span>
-          <strong>{{ props.selectedStation.weather?.temp ?? '-' }}°C</strong>
+          <strong>{{ props.formatTemperature(props.selectedStation.weather?.temp) }}°C</strong>
         </div>
         <div>
           <span class="label">습도</span>
@@ -91,14 +95,16 @@ const onSetForecastRange = (hours) => {
             </button>
           </div>
         </div>
-        <div class="forecast__row" v-for="hour in props.forecastHours" :key="hour.forecastAt">
-          <span class="forecast__time">{{ props.formatForecastTime(hour.forecastAt) }}</span>
-          <span class="forecast__temp">{{ hour.tempC ?? '-' }}°C</span>
-          <span class="forecast__meta">습도 {{ hour.humidity ?? '-' }}%</span>
-          <span class="forecast__meta">풍속 {{ hour.windSpeed ?? '-' }}m/s</span>
-          <span class="forecast__meta">강수 {{ props.formatPrecipType(hour.precipType) }}</span>
-          <span class="forecast__meta">강수량 {{ hour.precipMm ?? '-' }}mm</span>
-          <span class="forecast__meta">강수확률 {{ hour.pop ?? '-' }}%</span>
+        <div class="forecast__table">
+          <div class="forecast__row" v-for="hour in props.forecastHours" :key="hour.forecastAt">
+            <span class="forecast__time">{{ props.formatForecastTime(hour.forecastAt) }}</span>
+            <span class="forecast__temp">{{ props.formatTemperature(hour.tempC) }}°C</span>
+            <span class="forecast__meta">습도 {{ hour.humidity ?? '-' }}%</span>
+            <span class="forecast__meta">풍속 {{ hour.windSpeed ?? '-' }}m/s</span>
+            <span class="forecast__meta">강수 {{ props.formatPrecipType(hour.precipType) }}</span>
+            <span class="forecast__meta">강수량 {{ hour.precipMm ?? '-' }}mm</span>
+            <span class="forecast__meta">강수확률 {{ hour.pop ?? '-' }}%</span>
+          </div>
         </div>
       </div>
     </div>

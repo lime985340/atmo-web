@@ -367,6 +367,12 @@ body {
   gap: 8px;
 }
 
+.forecast__table {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+}
+
 .forecast h3 {
   margin: 0;
   font-size: 0.85rem;
@@ -401,6 +407,7 @@ body {
   gap: 8px;
   font-size: 0.85rem;
   align-items: center;
+  min-width: 700px;
 }
 
 .forecast__time {
@@ -419,6 +426,7 @@ body {
 .forecast--compact .forecast__row {
   grid-template-columns: 56px 60px repeat(3, minmax(64px, 1fr));
   font-size: 0.8rem;
+  min-width: 520px;
 }
 
 .map {

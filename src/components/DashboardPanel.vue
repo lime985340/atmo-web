@@ -15,6 +15,10 @@ const props = defineProps({
   formatPrecipType: {
     type: Function,
     required: true
+  },
+  formatTemperature: {
+    type: Function,
+    required: true
   }
 })
 </script>
@@ -29,18 +33,18 @@ const props = defineProps({
         <div class="grid">
           <div>
             <span class="label">온도</span>
-            <strong>{{ card.tempC ?? '-' }}°C</strong>
+            <strong>{{ props.formatTemperature(card.tempC) }}°C</strong>
           </div>
           <div>
             <span class="label">습도</span>
             <strong>{{ card.humidity ?? '-' }}%</strong>
           </div>
           <div>
-            <span class="label">PM10</span>
+            <span class="label">미세먼지 (PM10)</span>
             <strong>{{ card.pm10 ?? '-' }}</strong>
           </div>
           <div>
-            <span class="label">PM2.5</span>
+            <span class="label">초미세먼지 (PM2.5)</span>
             <strong>{{ card.pm25 ?? '-' }}</strong>
           </div>
         </div>
@@ -48,7 +52,7 @@ const props = defineProps({
           <h3>예보 (6시간)</h3>
           <div class="forecast__row" v-for="hour in props.limitedForecast(card.forecastHours)" :key="hour.forecastAt">
             <span class="forecast__time">{{ props.formatForecastTime(hour.forecastAt) }}</span>
-            <span class="forecast__temp">{{ hour.tempC ?? '-' }}°C</span>
+            <span class="forecast__temp">{{ props.formatTemperature(hour.tempC) }}°C</span>
             <span class="forecast__meta">풍속 {{ hour.windSpeed ?? '-' }}m/s</span>
             <span class="forecast__meta">강수 {{ props.formatPrecipType(hour.precipType) }}</span>
             <span class="forecast__meta">{{ hour.pop ?? '-' }}%</span>
