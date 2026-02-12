@@ -56,12 +56,22 @@ const providerDisplayMap = {
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
+const genericNameTokens = ['계정', '연동', 'google', 'kakao', 'naver', '구글', '카카오', '네이버']
+
 const isOpaqueName = (value) => {
   if (typeof value !== 'string') return false
   const trimmed = value.trim()
   if (!trimmed) return false
   if (uuidPattern.test(trimmed)) return true
   return /^[0-9]{10,}$/.test(trimmed)
+}
+
+const isProviderPlaceholderName = (name, providerLabel) => {
+  if (!name) return false
+  const normalized = name.toLowerCase().replace(/\s+/g, '')
+  const providerToken = (providerLabel || '').toLowerCase().replace(/\s+/g, '')
+  if (providerToken && normalized === providerToken) return true
+  return genericNameTokens.some((token) => normalized.includes(token))
 }
 
 const normalizeUser = (raw) => {
@@ -72,7 +82,8 @@ const normalizeUser = (raw) => {
   const provider = typeof raw.provider === 'string' ? raw.provider.toLowerCase() : ''
   const providerLabel = providerDisplayMap[provider] || '소셜'
   const emailPrefix = email.includes('@') ? email.split('@')[0] : ''
-  const displayName = safeName || emailPrefix || `${providerLabel} 계정`
+  const friendlyName = isProviderPlaceholderName(safeName, providerLabel) ? '' : safeName
+  const displayName = friendlyName || emailPrefix || providerLabel
   return {
     ...raw,
     provider,
@@ -105,6 +116,7 @@ const apiFetch = async (path, options = {}, allowRetry = true) => {
 }
 
 const login = async (provider) => {
+  authLoading.value = true
   try {
     const returnTo = `${window.location.origin}${window.location.pathname}`
     const data = await apiFetch(`/auth/oauth/${provider}/authorize-url?returnTo=${encodeURIComponent(returnTo)}`)
@@ -112,6 +124,7 @@ const login = async (provider) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : '로그인 요청에 실패했습니다.'
     setStatus(message)
+    authLoading.value = false
   }
 }
 
@@ -126,6 +139,8 @@ const logout = async () => {
     accessToken.value = ''
     localStorage.removeItem('accessToken')
     user.value = null
+    favorites.value = []
+    favoriteCards.value = []
   }
 }
 
@@ -160,7 +175,11 @@ const loadMe = async () => {
 }
 
 const loadFavorites = async () => {
-  if (!accessToken.value) return
+  if (!accessToken.value) {
+    favorites.value = []
+    favoriteCards.value = []
+    return
+  }
   try {
     favorites.value = await apiFetch('/favorites')
     favoriteCards.value = await apiFetch('/favorites/dashboard')
@@ -228,16 +247,36 @@ const formatWindSpeed = (value) => {
 
 const addFavorite = async () => {
   if (!selectedStation.value) return
+  const stationId = Number(selectedStation.value.id)
+  if (Number.isFinite(stationId) && favorites.value.some((favorite) => Number(favorite.stationId) === stationId)) {
+    setStatus('이미 즐겨찾기에 등록된 지역입니다.')
+    return
+  }
+
+  const preferredName = typeof selectedStation.value.addr === 'string' && selectedStation.value.addr.trim()
+    ? selectedStation.value.addr.trim()
+    : selectedStation.value.name
+
   const payload = {
-    name: selectedStation.value.name,
+    name: preferredName,
     lat: selectedStation.value.lat,
     lng: selectedStation.value.lng
   }
-  await apiFetch('/favorites', {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  })
-  await loadFavorites()
+
+  try {
+    const created = await apiFetch('/favorites', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+    const createdId = Number(created?.id)
+    if (Number.isFinite(createdId) && !favorites.value.some((favorite) => favorite.id === createdId)) {
+      favorites.value = [created, ...favorites.value]
+    }
+    await loadFavorites()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '즐겨찾기 추가에 실패했습니다.'
+    setStatus(message)
+  }
 }
 
 const removeFavorite = async (favoriteId) => {
@@ -253,6 +292,45 @@ const removeFavorite = async (favoriteId) => {
     setStatus(message)
   } finally {
     deletingFavoriteIds.value = deletingFavoriteIds.value.filter((id) => id !== favoriteId)
+  }
+}
+
+const resolveFavoriteStationId = (favorite) => {
+  const favoriteStationId = Number(favorite?.stationId)
+  if (Number.isFinite(favoriteStationId) && favoriteStationId > 0) return favoriteStationId
+
+  const lat = Number(favorite?.lat)
+  const lng = Number(favorite?.lng)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Array.isArray(stations.value)) return null
+
+  let nearest = null
+  let nearestDistance = Number.POSITIVE_INFINITY
+  stations.value.forEach((station) => {
+    const stationId = Number(station?.id ?? station?.stationId)
+    const stationLat = Number(station?.lat)
+    const stationLng = Number(station?.lng)
+    if (!Number.isFinite(stationId) || stationId <= 0) return
+    if (!Number.isFinite(stationLat) || !Number.isFinite(stationLng)) return
+    const distance = (stationLat - lat) ** 2 + (stationLng - lng) ** 2
+    if (distance < nearestDistance) {
+      nearestDistance = distance
+      nearest = stationId
+    }
+  })
+  return nearest
+}
+
+const selectFavorite = async (favorite) => {
+  const stationId = resolveFavoriteStationId(favorite)
+  if (!stationId) {
+    setStatus('해당 즐겨찾기와 연결된 측정소를 찾지 못했습니다.')
+    return
+  }
+  await loadStationDetail(stationId)
+  const lat = Number(favorite?.lat)
+  const lng = Number(favorite?.lng)
+  if (map.value && Number.isFinite(lat) && Number.isFinite(lng)) {
+    map.value.setCenter(new window.kakao.maps.LatLng(lat, lng))
   }
 }
 
@@ -286,10 +364,15 @@ const loadStationDetail = async (stationId) => {
     setStatus('측정소 식별자를 확인할 수 없습니다.')
     return
   }
-  selectedStation.value = await apiFetch(`/stations/${resolvedId}`)
-  const data = await apiFetch(`/stations/${resolvedId}/forecast?hours=${FORECAST_API_HORIZON_HOURS}`)
-  allForecastHours.value = Array.isArray(data) ? data : []
-  applyForecastRange(forecastRange.value)
+  try {
+    selectedStation.value = await apiFetch(`/stations/${resolvedId}`)
+    const data = await apiFetch(`/stations/${resolvedId}/forecast?hours=${FORECAST_API_HORIZON_HOURS}`)
+    allForecastHours.value = Array.isArray(data) ? data : []
+    applyForecastRange(forecastRange.value)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '측정소 상세를 불러오지 못했습니다.'
+    setStatus(message)
+  }
 }
 
 const setForecastRange = (hours) => {
@@ -377,20 +460,21 @@ const renderStationMarkers = (items) => {
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
       return { stationId, lat, lng }
     })
-    .filter(Boolean)
+    .filter((item) => item !== null)
 
   stationMarkers.value.push(
     ...sanitized
       .map((item) => {
-    const marker = new window.kakao.maps.Marker({
-      map: map.value,
-      position: new window.kakao.maps.LatLng(item.lat, item.lng)
-    })
-    window.kakao.maps.event.addListener(marker, 'click', () => {
-      loadStationDetail(stationId)
-    })
-    return marker
-  })
+        const stationId = item.stationId
+        const marker = new window.kakao.maps.Marker({
+          map: map.value,
+          position: new window.kakao.maps.LatLng(item.lat, item.lng)
+        })
+        window.kakao.maps.event.addListener(marker, 'click', () => {
+          loadStationDetail(stationId)
+        })
+        return marker
+      })
   )
 }
 
@@ -598,6 +682,7 @@ onMounted(async () => {
           v-if="favorites.length"
           :favorites="favorites"
           :deleting-ids="deletingFavoriteIds"
+          @select="selectFavorite"
           @remove="removeFavorite"
         />
 

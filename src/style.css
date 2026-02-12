@@ -148,6 +148,15 @@ body {
   line-height: 1.5;
 }
 
+.auth-modal__desc::after {
+  content: '...';
+  display: inline-block;
+  width: 1.5em;
+  overflow: hidden;
+  vertical-align: bottom;
+  animation: auth-dots 1.1s steps(4, end) infinite;
+}
+
 @keyframes auth-spin {
   to {
     transform: rotate(360deg);
@@ -162,6 +171,15 @@ body {
   to {
     transform: translateY(0) scale(1);
     opacity: 1;
+  }
+}
+
+@keyframes auth-dots {
+  0% {
+    width: 0;
+  }
+  100% {
+    width: 1.5em;
   }
 }
 
@@ -420,6 +438,13 @@ body {
   border-radius: 12px;
   border: 1px solid var(--stroke);
   background: var(--surface);
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.list__item:hover {
+  border-color: #7ea6d4;
+  box-shadow: 0 6px 14px rgba(31, 58, 95, 0.08);
 }
 
 .list__title {
