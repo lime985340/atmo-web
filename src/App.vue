@@ -36,6 +36,7 @@ const favoriteForecastRange = 6
 const favorites = ref([])
 const favoriteCards = ref([])
 const statusMessage = ref('')
+const favoritesRequestSeq = ref(0)
 
 const isAuthenticated = computed(() => Boolean(accessToken.value))
 
@@ -92,7 +93,7 @@ const normalizeUser = (raw) => {
   const emailPrefix = email.includes('@') ? email.split('@')[0] : ''
   const idLabel = shortUserId(typeof raw.id === 'string' ? raw.id : '')
   const friendlyName = isProviderPlaceholderName(safeName, providerLabel) ? '' : safeName
-  const displayName = friendlyName || emailPrefix || (idLabel ? `user_${idLabel}` : providerLabel)
+  const displayName = friendlyName || emailPrefix || (idLabel ? `ID ${idLabel}` : '사용자')
   const displayNameUi = friendlyName ? `${friendlyName}님` : displayName
   const identityLabel = friendlyName ? '이름' : (idLabel ? '계정 ID' : '계정')
   const accountLabel = friendlyName || (idLabel ? `ID ${idLabel}` : providerLabel)
@@ -197,8 +198,15 @@ const loadFavorites = async () => {
     favoriteCards.value = []
     return
   }
+  const requestSeq = favoritesRequestSeq.value + 1
+  favoritesRequestSeq.value = requestSeq
   try {
-    const favoriteList = await apiFetch('/favorites')
+    const [favoriteList, dashboardList] = await Promise.all([
+      apiFetch('/favorites'),
+      apiFetch('/favorites/dashboard')
+    ])
+    if (requestSeq !== favoritesRequestSeq.value) return
+
     const seenFavorites = new Set()
     favorites.value = (Array.isArray(favoriteList) ? favoriteList : []).filter((favorite) => {
       const key = favorite?.id ?? `${favorite?.stationId}:${favorite?.lat}:${favorite?.lng}`
@@ -207,7 +215,6 @@ const loadFavorites = async () => {
       return true
     })
 
-    const dashboardList = await apiFetch('/favorites/dashboard')
     const seenCards = new Set()
     favoriteCards.value = (Array.isArray(dashboardList) ? dashboardList : []).filter((card) => {
       const key = card?.id ?? `${card?.stationId}:${card?.name}`
@@ -221,11 +228,14 @@ const loadFavorites = async () => {
   }
 }
 
+let refreshFavoritesTimer = null
+
 const refreshFavoritesDeferred = () => {
   if (!accessToken.value) return
-  setTimeout(() => {
+  if (refreshFavoritesTimer) clearTimeout(refreshFavoritesTimer)
+  refreshFavoritesTimer = setTimeout(() => {
     loadFavorites().catch(() => {})
-  }, 250)
+  }, 0)
 }
 
 const limitedForecast = (items, limit = favoriteForecastRange) => {
