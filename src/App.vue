@@ -128,7 +128,8 @@ const apiFetch = async (path, options = {}, allowRetry = true) => {
   const res = await fetch(url, {
     method: options.method || 'GET',
     body: options.body,
-    headers: headers
+    headers: headers,
+    credentials: 'include'
   })
   
   if (res.status === 401 && allowRetry && path !== '/auth/refresh' && token) {
@@ -178,20 +179,34 @@ const logout = async () => {
   }
 }
 
+let refreshInFlight = null
+
 const refreshAccessToken = async () => {
-  try {
-    const data = await apiFetch('/auth/refresh', {
-      method: 'POST',
-      headers: { 'X-Client': 'web' },
-      body: JSON.stringify({})
-    })
-    if (data.accessToken) {
-      accessToken.value = data.accessToken
-      localStorage.setItem('accessToken', data.accessToken)
+  if (refreshInFlight) {
+    return refreshInFlight
+  }
+
+  refreshInFlight = (async () => {
+    try {
+      const data = await apiFetch('/auth/refresh', {
+        method: 'POST',
+        headers: { 'X-Client': 'web' },
+        body: JSON.stringify({})
+      })
+      if (data.accessToken) {
+        accessToken.value = data.accessToken
+        localStorage.setItem('accessToken', data.accessToken)
+      }
+    } catch (err) {
+      accessToken.value = ''
+      localStorage.removeItem('accessToken')
     }
-  } catch (err) {
-    accessToken.value = ''
-    localStorage.removeItem('accessToken')
+  })()
+
+  try {
+    await refreshInFlight
+  } finally {
+    refreshInFlight = null
   }
 }
 
