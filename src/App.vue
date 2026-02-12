@@ -108,14 +108,10 @@ const normalizeUser = (raw) => {
   }
 }
 
-const getAuthToken = () => {
-  // Always read fresh token from localStorage to avoid reactivity issues
-  return localStorage.getItem('accessToken')
-}
-
 const apiFetch = async (path, options = {}, allowRetry = true) => {
   const url = `${API_BASE}${path}`
-  const token = getAuthToken()
+  // Always read fresh token from localStorage to avoid reactivity issues
+  const token = localStorage.getItem('accessToken')
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
@@ -127,7 +123,7 @@ const apiFetch = async (path, options = {}, allowRetry = true) => {
   })
   if (res.status === 401 && allowRetry && path !== '/auth/refresh' && token) {
     await refreshAccessToken()
-    const newToken = getAuthToken()
+    const newToken = localStorage.getItem('accessToken')
     if (newToken) {
       return apiFetch(path, options, false)
     }
