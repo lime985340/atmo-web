@@ -93,6 +93,7 @@ const normalizeUser = (raw) => {
   const idLabel = shortUserId(typeof raw.id === 'string' ? raw.id : '')
   const friendlyName = isProviderPlaceholderName(safeName, providerLabel) ? '' : safeName
   const displayName = friendlyName || emailPrefix || (idLabel ? `user_${idLabel}` : providerLabel)
+  const displayNameUi = friendlyName ? `${friendlyName}님` : displayName
   const identityLabel = friendlyName ? '이름' : (idLabel ? '계정 ID' : '계정')
   const accountLabel = friendlyName || (idLabel ? `ID ${idLabel}` : providerLabel)
   return {
@@ -100,6 +101,7 @@ const normalizeUser = (raw) => {
     provider,
     providerLabel,
     displayName,
+    displayNameUi,
     identityLabel,
     accountLabel
   }
