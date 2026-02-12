@@ -137,7 +137,7 @@ const apiFetch = async (path, options = {}, allowRetry = true) => {
   
   if (res.status === 401 && allowRetry && path !== '/auth/refresh') {
     await refreshAccessToken()
-    const newToken = localStorage.getItem('accessToken')
+    const newToken = accessToken.value || localStorage.getItem('accessToken')
     if (newToken) {
       return apiFetch(path, options, false)
     }
@@ -167,7 +167,6 @@ const login = async (provider) => {
 }
 
 const logout = async () => {
-  if (!accessToken.value) return
   try {
     await apiFetch('/auth/logout', {
       method: 'POST',
