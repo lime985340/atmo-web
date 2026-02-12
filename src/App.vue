@@ -110,11 +110,14 @@ const normalizeUser = (raw) => {
 
 const apiFetch = async (path, options = {}, allowRetry = true) => {
   const url = `${API_BASE}${path}`
-  const token = localStorage.getItem('accessToken')
+  const token = accessToken.value || localStorage.getItem('accessToken')
   
   // Build headers manually to ensure Authorization is set
-  const headers = {
-    'Content-Type': 'application/json'
+  const headers = {}
+
+  const method = options.method || 'GET'
+  if (method !== 'GET' && method !== 'HEAD') {
+    headers['Content-Type'] = 'application/json'
   }
   
   if (token) {
@@ -126,7 +129,7 @@ const apiFetch = async (path, options = {}, allowRetry = true) => {
   }
   
   const res = await fetch(url, {
-    method: options.method || 'GET',
+    method,
     body: options.body,
     headers: headers,
     credentials: 'include'
@@ -195,7 +198,11 @@ const refreshAccessToken = async () => {
       })
       if (data.accessToken) {
         accessToken.value = data.accessToken
-        localStorage.setItem('accessToken', data.accessToken)
+        try {
+          localStorage.setItem('accessToken', data.accessToken)
+        } catch {
+          // If storage is unavailable (e.g., strict privacy mode), keep in-memory token for this session.
+        }
       }
     } catch (err) {
       accessToken.value = ''
