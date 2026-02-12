@@ -110,13 +110,20 @@ const normalizeUser = (raw) => {
 
 const apiFetch = async (path, options = {}, allowRetry = true) => {
   const url = `${API_BASE}${path}`
+  const headers = {
+    'Content-Type': 'application/json',
+    ...authHeader.value,
+    ...(options.headers || {})
+  }
+  // Debug logging
+  if (path.includes('/me') || path.includes('/favorites')) {
+    console.log(`[apiFetch] ${path} - accessToken:`, accessToken.value ? 'exists' : 'null')
+    console.log(`[apiFetch] ${path} - authHeader:`, JSON.stringify(authHeader.value))
+    console.log(`[apiFetch] ${path} - final headers:`, JSON.stringify(headers))
+  }
   const res = await fetch(url, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeader.value,
-      ...(options.headers || {})
-    }
+    headers
   })
   if (res.status === 401 && allowRetry && path !== '/auth/refresh' && accessToken.value) {
     await refreshAccessToken()
