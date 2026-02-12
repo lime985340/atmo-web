@@ -132,7 +132,7 @@ const apiFetch = async (path, options = {}, allowRetry = true) => {
     credentials: 'include'
   })
   
-  if (res.status === 401 && allowRetry && path !== '/auth/refresh' && token) {
+  if (res.status === 401 && allowRetry && path !== '/auth/refresh') {
     await refreshAccessToken()
     const newToken = localStorage.getItem('accessToken')
     if (newToken) {
@@ -703,6 +703,12 @@ onMounted(async () => {
     }
   }
   try {
+    if (!accessToken.value) {
+      // Try to restore session using refresh_token cookie.
+      // If no refresh_token exists, refresh will no-op and we stay logged out.
+      await refreshAccessToken()
+    }
+
     if (accessToken.value) {
       await loadMe()
       if (!user.value) {
