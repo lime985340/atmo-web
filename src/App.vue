@@ -19,6 +19,7 @@ const lastPolygonKey = ref('')
 const loading = ref(false)
 const user = ref(null)
 const authLoading = ref(true)
+const authModalVisible = ref(false)
 const accessToken = ref(localStorage.getItem('accessToken') || '')
 const deletingFavoriteIds = ref([])
 
@@ -74,6 +75,13 @@ const isProviderPlaceholderName = (name, providerLabel) => {
   return genericNameTokens.some((token) => normalized.includes(token))
 }
 
+const shortUserId = (value) => {
+  if (typeof value !== 'string') return ''
+  const normalized = value.trim().replace(/[^a-zA-Z0-9]/g, '')
+  if (!normalized) return ''
+  return normalized.slice(0, 8)
+}
+
 const normalizeUser = (raw) => {
   if (!raw || raw.authenticated !== true) return null
   const name = typeof raw.name === 'string' ? raw.name.trim() : ''
@@ -82,13 +90,18 @@ const normalizeUser = (raw) => {
   const provider = typeof raw.provider === 'string' ? raw.provider.toLowerCase() : ''
   const providerLabel = providerDisplayMap[provider] || '소셜'
   const emailPrefix = email.includes('@') ? email.split('@')[0] : ''
+  const idLabel = shortUserId(typeof raw.id === 'string' ? raw.id : '')
   const friendlyName = isProviderPlaceholderName(safeName, providerLabel) ? '' : safeName
-  const displayName = friendlyName || emailPrefix || providerLabel
+  const displayName = friendlyName || emailPrefix || (idLabel ? `user_${idLabel}` : providerLabel)
+  const identityLabel = friendlyName ? '이름' : (idLabel ? '계정 ID' : '계정')
+  const accountLabel = friendlyName || (idLabel ? `ID ${idLabel}` : providerLabel)
   return {
     ...raw,
     provider,
     providerLabel,
-    displayName
+    displayName,
+    identityLabel,
+    accountLabel
   }
 }
 
@@ -117,6 +130,7 @@ const apiFetch = async (path, options = {}, allowRetry = true) => {
 
 const login = async (provider) => {
   authLoading.value = true
+  authModalVisible.value = true
   try {
     const returnTo = `${window.location.origin}${window.location.pathname}`
     const data = await apiFetch(`/auth/oauth/${provider}/authorize-url?returnTo=${encodeURIComponent(returnTo)}`)
@@ -125,6 +139,7 @@ const login = async (provider) => {
     const message = err instanceof Error ? err.message : '로그인 요청에 실패했습니다.'
     setStatus(message)
     authLoading.value = false
+    authModalVisible.value = false
   }
 }
 
@@ -181,12 +196,34 @@ const loadFavorites = async () => {
     return
   }
   try {
-    favorites.value = await apiFetch('/favorites')
-    favoriteCards.value = await apiFetch('/favorites/dashboard')
+    const favoriteList = await apiFetch('/favorites')
+    const seenFavorites = new Set()
+    favorites.value = (Array.isArray(favoriteList) ? favoriteList : []).filter((favorite) => {
+      const key = favorite?.id ?? `${favorite?.stationId}:${favorite?.lat}:${favorite?.lng}`
+      if (seenFavorites.has(key)) return false
+      seenFavorites.add(key)
+      return true
+    })
+
+    const dashboardList = await apiFetch('/favorites/dashboard')
+    const seenCards = new Set()
+    favoriteCards.value = (Array.isArray(dashboardList) ? dashboardList : []).filter((card) => {
+      const key = card?.id ?? `${card?.stationId}:${card?.name}`
+      if (seenCards.has(key)) return false
+      seenCards.add(key)
+      return true
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : '즐겨찾기 데이터를 불러오지 못했습니다.'
     setStatus(message)
   }
+}
+
+const refreshFavoritesDeferred = () => {
+  if (!accessToken.value) return
+  setTimeout(() => {
+    loadFavorites().catch(() => {})
+  }, 250)
 }
 
 const limitedForecast = (items, limit = favoriteForecastRange) => {
@@ -272,7 +309,23 @@ const addFavorite = async () => {
     if (Number.isFinite(createdId) && !favorites.value.some((favorite) => favorite.id === createdId)) {
       favorites.value = [created, ...favorites.value]
     }
-    await loadFavorites()
+    if (Number.isFinite(createdId) && !favoriteCards.value.some((card) => card.id === createdId)) {
+      favoriteCards.value = [
+        {
+          id: createdId,
+          name: created?.name || preferredName,
+          stationName: created?.stationName || selectedStation.value?.name || '',
+          tempC: null,
+          humidity: null,
+          pm10: null,
+          pm25: null,
+          forecastHours: [],
+          stale: true
+        },
+        ...favoriteCards.value
+      ]
+    }
+    refreshFavoritesDeferred()
   } catch (err) {
     const message = err instanceof Error ? err.message : '즐겨찾기 추가에 실패했습니다.'
     setStatus(message)
@@ -286,7 +339,7 @@ const removeFavorite = async (favoriteId) => {
     await apiFetch(`/favorites/${favoriteId}`, { method: 'DELETE' })
     favorites.value = favorites.value.filter((favorite) => favorite.id !== favoriteId)
     favoriteCards.value = favoriteCards.value.filter((card) => card.id !== favoriteId)
-    await loadFavorites()
+    refreshFavoritesDeferred()
   } catch (err) {
     const message = err instanceof Error ? err.message : '즐겨찾기 삭제에 실패했습니다.'
     setStatus(message)
@@ -587,8 +640,12 @@ const formatPrecipType = (value) => {
 }
 
 onMounted(async () => {
-  authLoading.value = true
-  if (window.location.hash.includes('access_token=')) {
+  const hasAccessTokenFromStorage = Boolean(accessToken.value)
+  const hasAccessTokenInHash = window.location.hash.includes('access_token=')
+  authLoading.value = hasAccessTokenFromStorage || hasAccessTokenInHash
+  authModalVisible.value = hasAccessTokenInHash
+
+  if (hasAccessTokenInHash) {
     const hash = new URLSearchParams(window.location.hash.replace('#', ''))
     const token = hash.get('access_token')
     if (token) {
@@ -617,6 +674,7 @@ onMounted(async () => {
     setStatus(message)
   } finally {
     authLoading.value = false
+    authModalVisible.value = false
   }
   await initialize()
 })
@@ -704,12 +762,13 @@ onMounted(async () => {
       </section>
     </main>
 
-    <div v-if="authLoading" class="auth-modal" role="dialog" aria-modal="true" aria-live="polite">
+    <div v-if="authLoading && authModalVisible" class="auth-modal" role="dialog" aria-modal="true" aria-live="polite">
       <div class="auth-modal__backdrop"></div>
       <div class="auth-modal__panel">
         <span class="auth-modal__spinner" aria-hidden="true"></span>
         <p class="auth-modal__title">로그인 확인 중입니다</p>
-        <p class="auth-modal__desc">계정 상태를 안전하게 확인하고 있어요. 잠시만 기다려 주세요.</p>
+        <p class="auth-modal__desc">계정 상태를 안전하게 확인하고 있어요.</p>
+        <p class="auth-modal__wait">잠시만 기다려 주세요<span class="auth-modal__dots" aria-hidden="true"></span></p>
       </div>
     </div>
   </div>
