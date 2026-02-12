@@ -26,6 +26,7 @@ const showPolygons = ref(false)
 const showStations = ref(true)
 
 const stations = ref([])
+const stationsRequestSeq = ref(0)
 const selectedStation = ref(null)
 const forecastHours = ref([])
 const allForecastHours = ref([])
@@ -256,17 +257,27 @@ const removeFavorite = async (favoriteId) => {
 }
 
 const loadStations = async () => {
-  const snapshot = getMapSnapshot()
-  if (!snapshot) {
-    const data = await apiFetch('/stations')
-    stations.value = data.stations || []
+  const requestSeq = stationsRequestSeq.value + 1
+  stationsRequestSeq.value = requestSeq
+  try {
+    const snapshot = getMapSnapshot()
+    if (!snapshot) {
+      const data = await apiFetch('/stations')
+      if (requestSeq !== stationsRequestSeq.value) return
+      stations.value = Array.isArray(data.stations) ? data.stations : []
+      renderStationMarkers(stations.value)
+      return
+    }
+    const { swLat, swLng, neLat, neLng } = snapshot
+    const data = await apiFetch(`/stations/bbox?swLat=${swLat}&swLng=${swLng}&neLat=${neLat}&neLng=${neLng}&limit=300`)
+    if (requestSeq !== stationsRequestSeq.value) return
+    stations.value = Array.isArray(data.stations) ? data.stations : []
     renderStationMarkers(stations.value)
-    return
+  } catch (err) {
+    if (requestSeq !== stationsRequestSeq.value) return
+    const message = err instanceof Error ? err.message : '측정소 마커를 불러오지 못했습니다.'
+    setStatus(message)
   }
-  const { swLat, swLng, neLat, neLng } = snapshot
-  const data = await apiFetch(`/stations/bbox?swLat=${swLat}&swLng=${swLng}&neLat=${neLat}&neLng=${neLng}&limit=300`)
-  stations.value = data.stations || []
-  renderStationMarkers(stations.value)
 }
 
 const loadStationDetail = async (stationId) => {
@@ -355,12 +366,22 @@ const getMapSnapshot = () => {
 
 const renderStationMarkers = (items) => {
   clearMarkers(stationMarkers.value)
-  if (!showStations.value || !Array.isArray(items) || items.length === 0) return
+  if (!map.value || !showStations.value || !Array.isArray(items) || items.length === 0) return
+
+  const sanitized = items
+    .map((item) => {
+      const stationId = Number(item?.id ?? item?.stationId)
+      const lat = Number(item?.lat)
+      const lng = Number(item?.lng)
+      if (!Number.isFinite(stationId) || stationId <= 0) return null
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+      return { stationId, lat, lng }
+    })
+    .filter(Boolean)
+
   stationMarkers.value.push(
-    ...items
-      .filter((item) => item?.lat != null && item?.lng != null)
+    ...sanitized
       .map((item) => {
-    const stationId = item.id ?? item.stationId
     const marker = new window.kakao.maps.Marker({
       map: map.value,
       position: new window.kakao.maps.LatLng(item.lat, item.lng)
@@ -494,9 +515,16 @@ onMounted(async () => {
   }
   try {
     if (accessToken.value) {
-      await refreshAccessToken()
       await loadMe()
-      await loadFavorites()
+      if (!user.value) {
+        await refreshAccessToken()
+        if (accessToken.value) {
+          await loadMe()
+        }
+      }
+      if (user.value) {
+        await loadFavorites()
+      }
     } else {
       user.value = null
     }
