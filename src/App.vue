@@ -228,14 +228,13 @@ const loadFavorites = async () => {
   }
 }
 
-let refreshFavoritesTimer = null
-
-const refreshFavoritesDeferred = () => {
-  if (!accessToken.value) return
-  if (refreshFavoritesTimer) clearTimeout(refreshFavoritesTimer)
-  refreshFavoritesTimer = setTimeout(() => {
-    loadFavorites().catch(() => {})
-  }, 0)
+const ensureFavoriteCoords = () => {
+  const lat = Number(selectedStation.value?.lat)
+  const lng = Number(selectedStation.value?.lng)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null
+  }
+  return { lat, lng }
 }
 
 const limitedForecast = (items, limit = favoriteForecastRange) => {
@@ -302,14 +301,20 @@ const addFavorite = async () => {
     return
   }
 
+  const coords = ensureFavoriteCoords()
+  if (!coords) {
+    setStatus('측정소 좌표를 확인할 수 없어 즐겨찾기에 추가할 수 없습니다.')
+    return
+  }
+
   const preferredName = typeof selectedStation.value.addr === 'string' && selectedStation.value.addr.trim()
     ? selectedStation.value.addr.trim()
     : selectedStation.value.name
 
   const payload = {
     name: preferredName,
-    lat: selectedStation.value.lat,
-    lng: selectedStation.value.lng
+    lat: coords.lat,
+    lng: coords.lng
   }
 
   try {
@@ -337,7 +342,7 @@ const addFavorite = async () => {
         ...favoriteCards.value
       ]
     }
-    refreshFavoritesDeferred()
+    await loadFavorites()
   } catch (err) {
     const message = err instanceof Error ? err.message : '즐겨찾기 추가에 실패했습니다.'
     setStatus(message)
@@ -351,7 +356,7 @@ const removeFavorite = async (favoriteId) => {
     await apiFetch(`/favorites/${favoriteId}`, { method: 'DELETE' })
     favorites.value = favorites.value.filter((favorite) => favorite.id !== favoriteId)
     favoriteCards.value = favoriteCards.value.filter((card) => card.id !== favoriteId)
-    refreshFavoritesDeferred()
+    await loadFavorites()
   } catch (err) {
     const message = err instanceof Error ? err.message : '즐겨찾기 삭제에 실패했습니다.'
     setStatus(message)
