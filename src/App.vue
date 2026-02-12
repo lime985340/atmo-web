@@ -40,6 +40,26 @@ const favoritesRequestSeq = ref(0)
 
 const isAuthenticated = computed(() => Boolean(accessToken.value))
 
+const getJwtExpSeconds = (token) => {
+  if (!token || typeof token !== 'string') return null
+  const parts = token.split('.')
+  if (parts.length < 2) return null
+  try {
+    const json = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(parts[1].length / 4) * 4, '='))
+    const payload = JSON.parse(json)
+    return typeof payload.exp === 'number' ? payload.exp : null
+  } catch {
+    return null
+  }
+}
+
+const isJwtExpiredOrNearExpiry = (token, skewSeconds = 30) => {
+  const exp = getJwtExpSeconds(token)
+  if (!exp) return false
+  const now = Math.floor(Date.now() / 1000)
+  return exp <= now + skewSeconds
+}
+
 const providers = [
   { key: 'kakao', label: '카카오', theme: 'kakao' },
   { key: 'google', label: '구글', theme: 'google' },
@@ -709,9 +729,10 @@ onMounted(async () => {
     }
   }
   try {
-    if (!accessToken.value) {
+    if (!accessToken.value || isJwtExpiredOrNearExpiry(accessToken.value)) {
       // Try to restore session using refresh_token cookie.
-      // If no refresh_token exists, refresh will no-op and we stay logged out.
+      // Also refresh proactively if stored access token is expired/near-expiry
+      // to avoid a burst of initial 401s during bootstrap.
       await refreshAccessToken()
     }
 
