@@ -110,17 +110,27 @@ const normalizeUser = (raw) => {
 
 const apiFetch = async (path, options = {}, allowRetry = true) => {
   const url = `${API_BASE}${path}`
-  // Always read fresh token from localStorage to avoid reactivity issues
   const token = localStorage.getItem('accessToken')
+  
+  // Build headers manually to ensure Authorization is set
   const headers = {
-    'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    ...(options.headers || {})
+    'Content-Type': 'application/json'
   }
+  
+  if (token) {
+    headers['Authorization'] = 'Bearer ' + token
+  }
+  
+  if (options.headers) {
+    Object.assign(headers, options.headers)
+  }
+  
   const res = await fetch(url, {
-    ...options,
-    headers
+    method: options.method || 'GET',
+    body: options.body,
+    headers: headers
   })
+  
   if (res.status === 401 && allowRetry && path !== '/auth/refresh' && token) {
     await refreshAccessToken()
     const newToken = localStorage.getItem('accessToken')
@@ -128,10 +138,12 @@ const apiFetch = async (path, options = {}, allowRetry = true) => {
       return apiFetch(path, options, false)
     }
   }
+  
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.error || `요청 실패 (${res.status})`)
   }
+  
   return res.json().catch(() => ({}))
 }
 
