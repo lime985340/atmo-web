@@ -33,20 +33,12 @@ const onLogout = () => {
     </div>
     <div class="auth">
       <div v-if="!props.authLoading && props.user" class="auth__user">
-        <span class="auth__avatar" aria-hidden="true">{{ (props.user.providerLabel || '소셜').slice(0, 1) }}</span>
-        <span class="auth__identity">
-          <span
-            class="auth__provider-badge"
-            :class="`auth__provider-badge--${props.user.provider || 'social'}`"
-          >
-            {{ (props.user.providerLabel || '소셜') + ' 연동' }}
-          </span>
-          <span class="auth__name">{{ props.user.displayName || props.user.name || props.user.email || '사용자' }}</span>
-          <span class="auth__meta">
-            {{ props.user.identityLabel || '계정' }}
-            <template v-if="props.user.accountLabel"> · {{ props.user.accountLabel }}</template>
-          </span>
-        </span>
+        <span
+          class="auth__avatar"
+          :class="`auth__avatar--${props.user.provider || 'social'}`"
+          aria-hidden="true"
+        ></span>
+        <span class="auth__name">{{ props.user.displayNameUi || props.user.displayName || props.user.name || props.user.email || '사용자' }}</span>
         <button class="ghost" @click="onLogout">로그아웃</button>
       </div>
       <div v-else-if="!props.authLoading" class="auth__buttons">

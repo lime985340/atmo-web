@@ -87,14 +87,35 @@ body {
 .auth__avatar {
   width: 32px;
   height: 32px;
-  border-radius: 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.84rem;
-  font-weight: 800;
-  color: #0f2a43;
+  border-radius: 999px;
+  display: inline-block;
   background: linear-gradient(145deg, rgba(15, 118, 110, 0.18), rgba(14, 165, 233, 0.22));
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 18px 18px;
+}
+
+.auth__avatar--google {
+  background-color: #ffffff;
+  background-image: url('./assets/logo-google.svg');
+  border-color: rgba(31, 41, 55, 0.18);
+}
+
+.auth__avatar--naver {
+  background-color: rgba(3, 199, 90, 0.14);
+  background-image: url('./assets/logo-naver.svg');
+  border-color: rgba(3, 160, 74, 0.35);
+}
+
+.auth__avatar--kakao {
+  background-color: rgba(254, 229, 0, 0.34);
+  background-image: url('./assets/logo-kakao.svg');
+  border-color: rgba(125, 96, 4, 0.28);
+}
+
+.auth__avatar--social {
+  background-image: none;
 }
 
 .auth__identity {
