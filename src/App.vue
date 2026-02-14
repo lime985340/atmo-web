@@ -23,9 +23,6 @@ const authModalVisible = ref(false)
 const accessToken = ref(localStorage.getItem('accessToken') || '')
 const deletingFavoriteIds = ref([])
 
-const showPolygons = ref(false)
-const showStations = ref(true)
-
 const stations = ref([])
 const stationsRequestSeq = ref(0)
 const selectedStation = ref(null)
@@ -36,7 +33,25 @@ const favoriteForecastRange = 6
 const favorites = ref([])
 const favoriteCards = ref([])
 const statusMessage = ref('')
+const favoritesMessage = ref('')
+const globalMessage = ref('')
 const favoritesRequestSeq = ref(0)
+
+const favoriteCardsById = computed(() => {
+  const map = {}
+  favoriteCards.value.forEach((card) => {
+    const id = Number(card?.id)
+    if (!Number.isFinite(id)) return
+    map[id] = card
+  })
+  return map
+})
+
+const favoriteAddOpen = ref(false)
+const favoriteAddBusy = ref(false)
+const favoriteAddAddress = ref('')
+const favoriteAddName = ref('')
+const favoriteAddCoords = ref(null)
 
 const isAuthenticated = computed(() => Boolean(accessToken.value))
 
@@ -171,6 +186,151 @@ const apiFetch = async (path, options = {}, allowRetry = true) => {
   return res.json().catch(() => ({}))
 }
 
+let postcodeScriptPromise = null
+
+const ensureDaumPostcode = () => {
+  if (postcodeScriptPromise) return postcodeScriptPromise
+  postcodeScriptPromise = new Promise((resolve, reject) => {
+    if (window.daum && window.daum.Postcode) {
+      resolve()
+      return
+    }
+    const scriptId = 'daum-postcode-script'
+    const existing = document.getElementById(scriptId)
+    if (existing) {
+      existing.addEventListener('load', resolve, { once: true })
+      existing.addEventListener('error', reject, { once: true })
+      return
+    }
+    const script = document.createElement('script')
+    script.id = scriptId
+    script.src = 'https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js'
+    script.addEventListener('load', resolve, { once: true })
+    script.addEventListener('error', reject, { once: true })
+    document.head.appendChild(script)
+  })
+  return postcodeScriptPromise
+}
+
+const pickPostcodeAddress = async () => {
+  await ensureDaumPostcode()
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const settleOnce = (fn) => {
+      if (settled) return
+      settled = true
+      fn()
+    }
+    try {
+      new window.daum.Postcode({
+        oncomplete: (data) => {
+          const addr = (data.roadAddress || data.jibunAddress || data.address || '').trim()
+          if (!addr) {
+            settleOnce(() => reject(new Error('주소를 확인할 수 없습니다.')))
+            return
+          }
+          settleOnce(() =>
+            resolve({
+              address: addr,
+              buildingName: (data.buildingName || '').trim(),
+              bname: (data.bname || '').trim()
+            })
+          )
+        },
+        onclose: () => {
+          settleOnce(() => reject(new Error('주소 검색을 취소했습니다.')))
+        }
+      }).open()
+    } catch (e) {
+      settleOnce(() => reject(e))
+    }
+  })
+}
+
+const geocodeAddress = async (address) => {
+  await initKakao()
+  const services = window.kakao?.maps?.services
+  const Geocoder = services?.Geocoder
+  if (!Geocoder) {
+    throw new Error('주소 좌표 변환 기능을 사용할 수 없습니다.')
+  }
+  const geocoder = new Geocoder()
+  return new Promise((resolve, reject) => {
+    geocoder.addressSearch(address, (result, status) => {
+      const ok = services?.Status?.OK
+      if (ok && status !== ok) {
+        reject(new Error('주소 좌표 변환에 실패했습니다.'))
+        return
+      }
+      const first = Array.isArray(result) ? result[0] : null
+      const lat = Number(first?.y)
+      const lng = Number(first?.x)
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        reject(new Error('주소 좌표를 확인할 수 없습니다.'))
+        return
+      }
+      resolve({ lat, lng })
+    })
+  })
+}
+
+const openFavoriteAdd = async () => {
+  if (!isAuthenticated.value) {
+    setFavoritesMessage('로그인 후 이용 가능한 서비스입니다.')
+    return
+  }
+  try {
+    const picked = await pickPostcodeAddress()
+    const coords = await geocodeAddress(picked.address)
+    favoriteAddAddress.value = picked.address
+    favoriteAddName.value = (picked.buildingName || picked.bname || picked.address).trim()
+    favoriteAddCoords.value = coords
+    favoriteAddOpen.value = true
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '주소 검색을 완료하지 못했습니다.'
+    setFavoritesMessage(message)
+  }
+}
+
+const closeFavoriteAdd = () => {
+  favoriteAddOpen.value = false
+  favoriteAddBusy.value = false
+  favoriteAddAddress.value = ''
+  favoriteAddName.value = ''
+  favoriteAddCoords.value = null
+}
+
+const submitFavoriteAdd = async () => {
+  if (favoriteAddBusy.value) return
+  if (!favoriteAddCoords.value) {
+    setFavoritesMessage('주소 좌표를 확인할 수 없습니다.')
+    return
+  }
+  const name = String(favoriteAddName.value || '').trim() || favoriteAddAddress.value
+  if (!name) {
+    setFavoritesMessage('즐겨찾기 이름을 입력해 주세요.')
+    return
+  }
+  favoriteAddBusy.value = true
+  try {
+    await apiFetch('/favorites', {
+      method: 'POST',
+      body: JSON.stringify({
+        name,
+        lat: favoriteAddCoords.value.lat,
+        lng: favoriteAddCoords.value.lng
+      })
+    })
+    closeFavoriteAdd()
+    await loadFavorites()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '즐겨찾기 추가에 실패했습니다.'
+    setFavoritesMessage(message)
+  } finally {
+    favoriteAddBusy.value = false
+  }
+}
+
 const login = async (provider) => {
   authLoading.value = true
   authModalVisible.value = true
@@ -180,7 +340,7 @@ const login = async (provider) => {
     window.location.href = data.authorizeUrl
   } catch (err) {
     const message = err instanceof Error ? err.message : '로그인 요청에 실패했습니다.'
-    setStatus(message)
+    setGlobalMessage(message)
     authLoading.value = false
     authModalVisible.value = false
   }
@@ -281,17 +441,8 @@ const loadFavorites = async () => {
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : '즐겨찾기 데이터를 불러오지 못했습니다.'
-    setStatus(message)
+    setFavoritesMessage(message)
   }
-}
-
-const ensureFavoriteCoords = () => {
-  const lat = Number(selectedStation.value?.lat)
-  const lng = Number(selectedStation.value?.lng)
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return null
-  }
-  return { lat, lng }
 }
 
 const limitedForecast = (items, limit = favoriteForecastRange) => {
@@ -350,62 +501,6 @@ const formatWindSpeed = (value) => {
   return (Math.round(num * 10) / 10).toFixed(1)
 }
 
-const addFavorite = async () => {
-  if (!selectedStation.value) return
-  const stationId = Number(selectedStation.value.id)
-  if (Number.isFinite(stationId) && favorites.value.some((favorite) => Number(favorite.stationId) === stationId)) {
-    setStatus('이미 즐겨찾기에 등록된 지역입니다.')
-    return
-  }
-
-  const coords = ensureFavoriteCoords()
-  if (!coords) {
-    setStatus('측정소 좌표를 확인할 수 없어 즐겨찾기에 추가할 수 없습니다.')
-    return
-  }
-
-  const preferredName = typeof selectedStation.value.addr === 'string' && selectedStation.value.addr.trim()
-    ? selectedStation.value.addr.trim()
-    : selectedStation.value.name
-
-  const payload = {
-    name: preferredName,
-    lat: coords.lat,
-    lng: coords.lng
-  }
-
-  try {
-    const created = await apiFetch('/favorites', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    })
-    const createdId = Number(created?.id)
-    if (Number.isFinite(createdId) && !favorites.value.some((favorite) => favorite.id === createdId)) {
-      favorites.value = [created, ...favorites.value]
-    }
-    if (Number.isFinite(createdId) && !favoriteCards.value.some((card) => card.id === createdId)) {
-      favoriteCards.value = [
-        {
-          id: createdId,
-          name: created?.name || preferredName,
-          stationName: created?.stationName || selectedStation.value?.name || '',
-          tempC: null,
-          humidity: null,
-          pm10: null,
-          pm25: null,
-          forecastHours: [],
-          stale: true
-        },
-        ...favoriteCards.value
-      ]
-    }
-    await loadFavorites()
-  } catch (err) {
-    const message = err instanceof Error ? err.message : '즐겨찾기 추가에 실패했습니다.'
-    setStatus(message)
-  }
-}
-
 const removeFavorite = async (favoriteId) => {
   if (deletingFavoriteIds.value.includes(favoriteId)) return
   deletingFavoriteIds.value = [...deletingFavoriteIds.value, favoriteId]
@@ -416,7 +511,7 @@ const removeFavorite = async (favoriteId) => {
     await loadFavorites()
   } catch (err) {
     const message = err instanceof Error ? err.message : '즐겨찾기 삭제에 실패했습니다.'
-    setStatus(message)
+    setFavoritesMessage(message)
   } finally {
     deletingFavoriteIds.value = deletingFavoriteIds.value.filter((id) => id !== favoriteId)
   }
@@ -450,7 +545,7 @@ const resolveFavoriteStationId = (favorite) => {
 const selectFavorite = async (favorite) => {
   const stationId = resolveFavoriteStationId(favorite)
   if (!stationId) {
-    setStatus('해당 즐겨찾기와 연결된 측정소를 찾지 못했습니다.')
+    setFavoritesMessage('해당 즐겨찾기와 연결된 환경 정보를 찾지 못했습니다.')
     return
   }
   await loadStationDetail(stationId)
@@ -481,14 +576,14 @@ const loadStations = async () => {
   } catch (err) {
     if (requestSeq !== stationsRequestSeq.value) return
     const message = err instanceof Error ? err.message : '측정소 마커를 불러오지 못했습니다.'
-    setStatus(message)
+    setGlobalMessage(message)
   }
 }
 
 const loadStationDetail = async (stationId) => {
   const resolvedId = Number(stationId)
   if (!Number.isFinite(resolvedId) || resolvedId <= 0) {
-    setStatus('측정소 식별자를 확인할 수 없습니다.')
+    setGlobalMessage('대상 식별자를 확인할 수 없습니다.')
     return
   }
   try {
@@ -497,8 +592,8 @@ const loadStationDetail = async (stationId) => {
     allForecastHours.value = Array.isArray(data) ? data : []
     applyForecastRange(forecastRange.value)
   } catch (err) {
-    const message = err instanceof Error ? err.message : '측정소 상세를 불러오지 못했습니다.'
-    setStatus(message)
+    const message = err instanceof Error ? err.message : '환경 상세를 불러오지 못했습니다.'
+    setGlobalMessage(message)
   }
 }
 
@@ -512,6 +607,24 @@ const setStatus = (msg) => {
   if (msg) {
     setTimeout(() => {
       if (statusMessage.value === msg) statusMessage.value = ''
+    }, 4000)
+  }
+}
+
+const setFavoritesMessage = (msg) => {
+  favoritesMessage.value = msg
+  if (msg) {
+    setTimeout(() => {
+      if (favoritesMessage.value === msg) favoritesMessage.value = ''
+    }, 4000)
+  }
+}
+
+const setGlobalMessage = (msg) => {
+  globalMessage.value = msg
+  if (msg) {
+    setTimeout(() => {
+      if (globalMessage.value === msg) globalMessage.value = ''
     }, 4000)
   }
 }
@@ -538,7 +651,7 @@ const initKakao = () => new Promise((resolve, reject) => {
 
   const script = document.createElement('script')
   script.id = scriptId
-  script.src = `https://dapi.kakao.com/v2/maps/sdk.js?autoload=false&appkey=${KAKAO_KEY}`
+  script.src = `https://dapi.kakao.com/v2/maps/sdk.js?autoload=false&appkey=${KAKAO_KEY}&libraries=services`
   script.addEventListener('load', ready, { once: true })
   script.addEventListener('error', reject, { once: true })
   document.head.appendChild(script)
@@ -549,14 +662,6 @@ const clearMarkers = (list) => {
     m.setMap(null)
   })
   list.length = 0
-}
-
-const toggleStationMarkers = () => {
-  if (!showStations.value) {
-    clearMarkers(stationMarkers.value)
-    return
-  }
-  renderStationMarkers(stations.value)
 }
 
 const getMapSnapshot = () => {
@@ -576,7 +681,7 @@ const getMapSnapshot = () => {
 
 const renderStationMarkers = (items) => {
   clearMarkers(stationMarkers.value)
-  if (!map.value || !showStations.value || !Array.isArray(items) || items.length === 0) return
+  if (!map.value || !Array.isArray(items) || items.length === 0) return
 
   const sanitized = items
     .map((item) => {
@@ -627,11 +732,6 @@ const resolveRegionCode = () => {
 const loadPolygons = async () => {
   const snapshot = getMapSnapshot()
   if (!snapshot) return
-  if (!showPolygons.value) {
-    clearPolygons()
-    lastPolygonKey.value = ''
-    return
-  }
 
   try {
     const level = getPolygonLevel(snapshot.level)
@@ -671,7 +771,7 @@ const loadPolygons = async () => {
       polygonOverlays.value.push(polygon)
     })
   } catch (err) {
-    setStatus(err.message)
+    setGlobalMessage(err.message)
   }
 }
 
@@ -684,14 +784,12 @@ const initialize = async () => {
     })
     window.kakao.maps.event.addListener(map.value, 'idle', () => {
       loadStations()
-      if (showPolygons.value) {
-        loadPolygons()
-      }
+      loadPolygons()
     })
     await loadStations()
     await loadPolygons()
   } catch (err) {
-    setStatus(err.message)
+    setGlobalMessage(err.message)
   }
 }
 
@@ -752,7 +850,7 @@ onMounted(async () => {
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : '로그인 정보를 확인하는 중 오류가 발생했습니다.'
-    setStatus(message)
+    setGlobalMessage(message)
   } finally {
     authLoading.value = false
     authModalVisible.value = false
@@ -765,17 +863,15 @@ onMounted(async () => {
   <div class="app">
     <TopBar :user="user" :providers="providers" :auth-loading="authLoading" @login="login" @logout="logout" />
 
-    <main class="layout">
-      <section class="panel">
-        <div class="panel__section panel__hero">
+    <main class="layout layout--triple">
+      <section class="panel panel--sidebar">
+        <div class="panel__section panel__hero panel__hero--compact">
           <div class="hero__eyebrow">ATMO LIVE</div>
-          <h1 class="hero__title">도시의 공기와 날씨를 한눈에</h1>
-          <p class="hero__desc">
-            지도 바운드 기반 측정소 조회와 줌 레벨별 폴리곤을 결합해 지금 이 순간의 환경 흐름을 보여줍니다.
-          </p>
+          <h1 class="hero__title">지금 이 순간의 환경 흐름</h1>
+          <p class="hero__desc">지도 바운드 기반 측정소 조회로 주변 환경을 빠르게 확인합니다.</p>
           <div class="hero__stats">
             <div class="stat">
-              <span class="stat__label">현재 측정소</span>
+              <span class="stat__label">표시 중</span>
               <strong class="stat__value">{{ stations.length }}</strong>
             </div>
             <div class="stat">
@@ -783,46 +879,63 @@ onMounted(async () => {
               <strong class="stat__value">{{ favorites.length }}</strong>
             </div>
             <div class="stat">
-              <span class="stat__label">선택 측정소</span>
+              <span class="stat__label">선택</span>
               <strong class="stat__value">{{ selectedStation?.name || '-' }}</strong>
             </div>
           </div>
         </div>
 
-        <div class="panel__section">
-          <h2>지도 레이어</h2>
-          <label class="toggle">
-            <input type="checkbox" v-model="showStations" @change="toggleStationMarkers" />
-            <span>측정소 마커</span>
-          </label>
-          <label class="toggle">
-            <input type="checkbox" v-model="showPolygons" @change="loadPolygons" />
-            <span>지역 폴리곤</span>
-          </label>
-        </div>
+        <FavoritesList
+          :favorites="favorites"
+          :cards-by-id="favoriteCardsById"
+          :deleting-ids="deletingFavoriteIds"
+          :message="favoritesMessage"
+          @select="selectFavorite"
+          @remove="removeFavorite"
+          @add="openFavoriteAdd"
+        />
 
+        <div class="panel__section" v-if="favoriteAddOpen">
+          <div class="card favorite-add">
+            <p class="card__title">즐겨찾기 추가</p>
+            <p class="card__meta">{{ favoriteAddAddress }}</p>
+            <label class="label" for="favoriteAddName">이름</label>
+            <input
+              id="favoriteAddName"
+              class="input"
+              v-model="favoriteAddName"
+              type="text"
+              autocomplete="off"
+              placeholder="예: 우리집, 회사"
+            />
+            <div class="favorite-add__actions">
+              <button class="ghost" type="button" @click="closeFavoriteAdd" :disabled="favoriteAddBusy">취소</button>
+              <button class="primary" type="button" @click="submitFavoriteAdd" :disabled="favoriteAddBusy">+ 추가</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="map">
+        <div class="map__canvas" ref="mapEl"></div>
+        <div class="map__status" v-if="loading">지도 데이터를 불러오는 중...</div>
+      </section>
+
+      <div class="global-toast" v-if="globalMessage">{{ globalMessage }}</div>
+
+      <section class="panel panel--detail">
         <StationDetail
           v-if="selectedStation"
           :selected-station="selectedStation"
           :forecast-range="forecastRange"
           :forecast-hours="forecastHours"
-          :is-authenticated="isAuthenticated"
           :format-forecast-time="formatForecastTime"
           :format-precip-type="formatPrecipType"
           :format-temperature="formatTemperature"
           :format-wind-speed="formatWindSpeed"
           :forecast-availability="forecastAvailability"
           :forecast-range-options="forecastRangeOptions"
-          @add-favorite="addFavorite"
           @set-forecast-range="setForecastRange"
-        />
-
-        <FavoritesList
-          v-if="favorites.length"
-          :favorites="favorites"
-          :deleting-ids="deletingFavoriteIds"
-          @select="selectFavorite"
-          @remove="removeFavorite"
         />
 
         <DashboardPanel
@@ -834,12 +947,6 @@ onMounted(async () => {
           :format-temperature="formatTemperature"
           :format-wind-speed="formatWindSpeed"
         />
-      </section>
-
-      <section class="map">
-        <div class="map__canvas" ref="mapEl"></div>
-        <div class="map__status" v-if="loading">지도 데이터를 불러오는 중...</div>
-        <div class="map__status error" v-if="statusMessage">{{ statusMessage }}</div>
       </section>
     </main>
 
