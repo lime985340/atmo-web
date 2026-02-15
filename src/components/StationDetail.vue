@@ -201,19 +201,7 @@ const formatDataTime = (value) => {
       </div>
       <div class="forecast">
         <div class="forecast__header">
-          <h3>시간대 예보 ({{ props.forecastRange }}시간)</h3>
-          <div class="forecast__range">
-            <button
-              v-for="hours in props.forecastRangeOptions"
-              :key="hours"
-              class="ghost"
-              :class="{ active: props.forecastRange === hours }"
-              :disabled="(props.forecastAvailability[hours] || 0) === 0"
-              @click="onSetForecastRange(hours)"
-            >
-              {{ hours }}H <span class="forecast__count">{{ props.forecastAvailability[hours] || 0 }}</span>
-            </button>
-          </div>
+          <h3>예보</h3>
         </div>
         <div class="forecast__table" v-if="props.forecastHours.length">
           <div class="forecast__row forecast__row--head" aria-hidden="true">
@@ -235,7 +223,7 @@ const formatDataTime = (value) => {
             <span class="forecast__meta">{{ hour.pop ?? '-' }}%</span>
           </div>
         </div>
-        <p class="forecast__empty" v-else>선택한 시간대에 예보 데이터가 없습니다. 다른 시간 범위를 선택해 주세요.</p>
+        <p class="forecast__empty" v-else>예보 데이터가 없습니다.</p>
       </div>
     </div>
   </div>

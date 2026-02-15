@@ -581,19 +581,14 @@ const showFavoriteLocationMarker = (lat, lng) => {
     favoriteLocationMarker.value = null
   }
   
-  // 초록색 마커 이미지 생성
+  // 기본 마커와 동일한 모양, 색상만 초록색으로 변경
   const markerImage = new window.kakao.maps.MarkerImage(
-    'data:image/svg+xml;base64,' + btoa(`
-      <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
-        <circle cx="14" cy="14" r="10" fill="#22c55e" stroke="white" stroke-width="3"/>
-        <circle cx="14" cy="14" r="4" fill="white"/>
-      </svg>
-    `),
-    new window.kakao.maps.Size(28, 28),
-    { offset: new window.kakao.maps.Point(14, 14) }
+    'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png',
+    new window.kakao.maps.Size(24, 35),
+    { offset: new window.kakao.maps.Point(12, 35) }
   )
   
-  // 새 마커 생성
+  // 새 마커 생성 (기본 마커와 동일하게)
   const marker = new window.kakao.maps.Marker({
     position: new window.kakao.maps.LatLng(lat, lng),
     map: map.value,
