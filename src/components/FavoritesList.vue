@@ -24,8 +24,8 @@ const props = defineProps({
 
 const emit = defineEmits(['select', 'remove', 'add'])
 
-const onSelect = (favorite) => {
-  emit('select', favorite)
+const onSelect = (card) => {
+  emit('select', card)
 }
 
 const onRemove = (favoriteId) => {
@@ -88,20 +88,53 @@ const getPm25Label = (value) => {
   if (num <= 75) return '나쁨'
   return '매우나쁨'
 }
+
+// 데이터 시간 포맷팅
+const formatDataTime = (value) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString('ko-KR', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
 </script>
 
 <template>
   <div class="panel__section fav-section">
-    <div class="panel__header">
+    <div class="fav-header">
       <h2>즐겨찾기 목록</h2>
       <button class="ghost" type="button" @click="onAdd">+ 추가</button>
     </div>
     <p class="fav__message" v-if="props.message">{{ props.message }}</p>
     <div class="fav-scroll-container">
+      <!-- Dashboard 카드를 즐겨찾기 목록으로 사용 -->
       <div class="dashboard-cards" v-if="props.favoriteCards.length">
-        <div class="dashboard__card" v-for="card in props.favoriteCards" :key="card.id">
-          <p class="card__title">{{ card.description }}</p>
-          <p class="card__meta" v-if="card.address">{{ card.address }}</p>
+        <div 
+          class="dashboard__card fav-card" 
+          v-for="card in props.favoriteCards" 
+          :key="card.id"
+          @click="onSelect(card)"
+        >
+          <div class="fav-card__header">
+            <div class="fav-card__info">
+              <p class="card__title">{{ card.description }}</p>
+              <p class="card__meta" v-if="card.address">{{ card.address }}</p>
+            </div>
+            <div class="fav-card__actions">
+              <span :class="dotClass(card)" aria-hidden="true"></span>
+              <button 
+                class="ghost fav-card__delete" 
+                :disabled="props.deletingIds.includes(card.id)" 
+                @click.stop="onRemove(card.id)"
+              >
+                {{ props.deletingIds.includes(card.id) ? '삭제 중...' : '삭제' }}
+              </button>
+            </div>
+          </div>
           <div class="fav-grid">
             <div>
               <span class="fav-label">온도</span>
@@ -120,25 +153,14 @@ const getPm25Label = (value) => {
               <strong>{{ card.pm25 ?? '-' }} <span class="grade-label-small">({{ getPm25Label(card.pm25) }})</span></strong>
             </div>
           </div>
+          <!-- 데이터 시간 표시 -->
+          <p class="fav-card__time" v-if="card.airDataTime || card.weatherObsTime">
+            측정 시간: {{ formatDataTime(card.airDataTime || card.weatherObsTime) }}
+            <span v-if="card.stale" class="fav-card__stale">(지연)</span>
+          </p>
         </div>
       </div>
-      <div class="list" v-if="props.favorites.length">
-        <div class="list__item" v-for="fav in props.favorites" :key="fav.id" @click="onSelect(fav)">
-          <div class="fav__body">
-            <p class="list__title">{{ fav.address || fav.description }}</p>
-            <p class="list__meta" v-if="fav.description && fav.description !== fav.address">{{ fav.description }}</p>
-            <p class="list__meta" v-else-if="!fav.address">주소 정보 없음</p>
-          </div>
-          <div class="fav__right">
-            <span class="fav__temp">{{ (props.cardsById[fav.id]?.tempC ?? '-') }}°</span>
-            <span :class="dotClass(props.cardsById[fav.id])" aria-hidden="true"></span>
-          </div>
-          <button class="ghost" :disabled="props.deletingIds.includes(fav.id)" @click.stop="onRemove(fav.id)">
-            {{ props.deletingIds.includes(fav.id) ? '삭제 중...' : '삭제' }}
-          </button>
-        </div>
-      </div>
-      <p class="empty" v-if="!props.favorites.length && !props.favoriteCards.length">아직 등록된 즐겨찾기가 없습니다.</p>
+      <p class="empty" v-else>아직 등록된 즐겨찾기가 없습니다.</p>
     </div>
   </div>
 </template>
@@ -149,6 +171,23 @@ const getPm25Label = (value) => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+/* 환경 상세와 동일한 헤더 스타일 */
+.fav-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.fav-header h2 {
+  font-size: 0.95rem;
+  margin: 0;
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .fav-scroll-container {
@@ -176,7 +215,6 @@ const getPm25Label = (value) => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin-bottom: 16px;
 }
 
 .dashboard__card {
@@ -184,6 +222,53 @@ const getPm25Label = (value) => {
   padding: 14px;
   border: 1px solid rgba(15, 23, 42, 0.12);
   background: linear-gradient(140deg, #ffffff 0%, #f3f7f6 100%);
+}
+
+/* 클릭 가능한 카드 스타일 */
+.fav-card {
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.fav-card:hover {
+  border-color: #7ea6d4;
+  box-shadow: 0 6px 14px rgba(31, 58, 95, 0.08);
+}
+
+.fav-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.fav-card__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.fav-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.fav-card__delete {
+  font-size: 0.75rem;
+  padding: 4px 8px;
+}
+
+.fav-card__time {
+  margin: 10px 0 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.fav-card__stale {
+  color: #e05d3c;
+  font-weight: 600;
 }
 
 .grade-label-small {
@@ -196,7 +281,6 @@ const getPm25Label = (value) => {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
-  margin-top: 10px;
 }
 
 .fav-grid .fav-label {
@@ -208,5 +292,33 @@ const getPm25Label = (value) => {
 
 .fav-grid strong {
   font-size: 0.9rem;
+}
+
+/* dot 클래스 스타일 */
+.fav__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+}
+
+.fav__dot--good {
+  background: #16a34a;
+}
+
+.fav__dot--ok {
+  background: #f59e0b;
+}
+
+.fav__dot--bad {
+  background: #f97316;
+}
+
+.fav__dot--verybad {
+  background: #ef4444;
+}
+
+.fav__dot--unknown {
+  background: #94a3b8;
 }
 </style>
