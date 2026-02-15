@@ -581,20 +581,23 @@ const showFavoriteLocationMarker = (lat, lng) => {
     favoriteLocationMarker.value = null
   }
   
-  // 현대적인 커스텀 마커 생성 (파란색 원형 마커)
-  const markerContent = document.createElement('div')
-  markerContent.className = 'favorite-marker'
-  markerContent.innerHTML = `
-    <div class="favorite-marker__pin">
-      <div class="favorite-marker__pulse"></div>
-    </div>
-  `
+  // 초록색 마커 이미지 생성
+  const markerImage = new window.kakao.maps.MarkerImage(
+    'data:image/svg+xml;base64,' + btoa(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+        <circle cx="14" cy="14" r="10" fill="#22c55e" stroke="white" stroke-width="3"/>
+        <circle cx="14" cy="14" r="4" fill="white"/>
+      </svg>
+    `),
+    new window.kakao.maps.Size(28, 28),
+    { offset: new window.kakao.maps.Point(14, 14) }
+  )
   
-  const marker = new window.kakao.maps.CustomOverlay({
+  // 새 마커 생성
+  const marker = new window.kakao.maps.Marker({
     position: new window.kakao.maps.LatLng(lat, lng),
-    content: markerContent,
     map: map.value,
-    yAnchor: 1
+    image: markerImage
   })
   
   favoriteLocationMarker.value = marker
@@ -749,27 +752,13 @@ const renderStationMarkers = (items) => {
     ...sanitized
       .map((item) => {
         const stationId = item.stationId
-        
-        // 현대적인 커스텀 마커 생성
-        const markerContent = document.createElement('div')
-        markerContent.className = 'station-marker'
-        markerContent.innerHTML = `
-          <div class="station-marker__dot"></div>
-        `
-        
-        const marker = new window.kakao.maps.CustomOverlay({
-          position: new window.kakao.maps.LatLng(item.lat, item.lng),
-          content: markerContent,
-          yAnchor: 0.5
+        const marker = new window.kakao.maps.Marker({
+          map: map.value,
+          position: new window.kakao.maps.LatLng(item.lat, item.lng)
         })
-        
-        marker.setMap(map.value)
-        
-        // 클릭 이벤트 추가
-        markerContent.addEventListener('click', () => {
+        window.kakao.maps.event.addListener(marker, 'click', () => {
           loadStationDetail(stationId)
         })
-        
         return marker
       })
   )

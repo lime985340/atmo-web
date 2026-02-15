@@ -164,9 +164,8 @@ const formatDataTime = (value) => {
           <p class="card__title">{{ props.favoriteLocation?.description || props.selectedStation.name }}</p>
           <p class="card__meta">{{ props.favoriteLocation?.address || props.selectedStation.addr || '주소 없음' }}</p>
         </div>
-        <div class="env__grade-badge" :title="'PM2.5: ' + (props.selectedStation.air?.pm25 ?? '-') + '  /  PM10: ' + (props.selectedStation.air?.pm10 ?? '-')">
+        <div class="env__grade-badge" title="미세먼지 등급">
           <span :class="pmGradeClass">{{ pmGradeLabel }}</span>
-          <small class="grade-hint">미세먼지 등급</small>
         </div>
       </div>
 
