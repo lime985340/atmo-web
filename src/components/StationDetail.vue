@@ -118,6 +118,24 @@ const weatherIcon = computed(() => {
 const onSetForecastRange = (hours) => {
   emit('set-forecast-range', hours)
 }
+
+const getPm10Label = (value) => {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  if (num <= 30) return '좋음'
+  if (num <= 80) return '보통'
+  if (num <= 150) return '나쁨'
+  return '매우나쁨'
+}
+
+const getPm25Label = (value) => {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  if (num <= 15) return '좋음'
+  if (num <= 35) return '보통'
+  if (num <= 75) return '나쁨'
+  return '매우나쁨'
+}
 </script>
 
 <template>
@@ -141,11 +159,11 @@ const onSetForecastRange = (hours) => {
       <div class="grid">
         <div>
           <span class="label">미세먼지 (PM10)</span>
-          <strong :class="pmMetricClass">{{ props.selectedStation.air?.pm10 ?? '-' }}</strong>
+          <strong :class="pmMetricClass">{{ props.selectedStation.air?.pm10 ?? '-' }} <span class="grade-label">({{ getPm10Label(props.selectedStation.air?.pm10) }})</span></strong>
         </div>
         <div>
           <span class="label">초미세먼지 (PM2.5)</span>
-          <strong :class="pmMetricClass">{{ props.selectedStation.air?.pm25 ?? '-' }}</strong>
+          <strong :class="pmMetricClass">{{ props.selectedStation.air?.pm25 ?? '-' }} <span class="grade-label">({{ getPm25Label(props.selectedStation.air?.pm25) }})</span></strong>
         </div>
         <div>
           <span class="label">온도</span>

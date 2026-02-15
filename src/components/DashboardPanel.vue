@@ -32,8 +32,8 @@ const props = defineProps({
     <h2>대시보드</h2>
     <div class="dashboard">
       <div class="dashboard__card" v-for="card in props.favoriteCards" :key="card.id">
-        <p class="card__title">{{ card.name }}</p>
-        <p class="card__meta" v-if="card.stationName">{{ card.stationName }}</p>
+        <p class="card__title">{{ card.description }}</p>
+        <p class="card__meta" v-if="card.address">{{ card.address }}</p>
         <div class="grid">
           <div>
             <span class="label">온도</span>
@@ -64,7 +64,6 @@ const props = defineProps({
             </div>
           </div>
         </div>
-        <p class="stale" v-if="card.stale">데이터 갱신 지연</p>
       </div>
     </div>
   </div>

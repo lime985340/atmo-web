@@ -306,8 +306,8 @@ const submitFavoriteAdd = async () => {
     setFavoritesMessage('주소 좌표를 확인할 수 없습니다.')
     return
   }
-  const name = String(favoriteAddName.value || '').trim() || favoriteAddAddress.value
-  if (!name) {
+  const description = String(favoriteAddName.value || '').trim() || favoriteAddAddress.value
+  if (!description) {
     setFavoritesMessage('즐겨찾기 이름을 입력해 주세요.')
     return
   }
@@ -316,9 +316,10 @@ const submitFavoriteAdd = async () => {
     await apiFetch('/favorites', {
       method: 'POST',
       body: JSON.stringify({
-        name,
+        description,
         lat: favoriteAddCoords.value.lat,
-        lng: favoriteAddCoords.value.lng
+        lng: favoriteAddCoords.value.lng,
+        address: favoriteAddAddress.value
       })
     })
     closeFavoriteAdd()
@@ -426,7 +427,7 @@ const loadFavorites = async () => {
 
     const seenFavorites = new Set()
     favorites.value = (Array.isArray(favoriteList) ? favoriteList : []).filter((favorite) => {
-      const key = favorite?.id ?? `${favorite?.stationId}:${favorite?.lat}:${favorite?.lng}`
+      const key = favorite?.id ?? `${favorite?.lat}:${favorite?.lng}`
       if (seenFavorites.has(key)) return false
       seenFavorites.add(key)
       return true
@@ -434,7 +435,7 @@ const loadFavorites = async () => {
 
     const seenCards = new Set()
     favoriteCards.value = (Array.isArray(dashboardList) ? dashboardList : []).filter((card) => {
-      const key = card?.id ?? `${card?.stationId}:${card?.name}`
+      const key = card?.id ?? `${card?.description}`
       if (seenCards.has(key)) return false
       seenCards.add(key)
       return true
@@ -517,41 +518,38 @@ const removeFavorite = async (favoriteId) => {
   }
 }
 
-const resolveFavoriteStationId = (favorite) => {
-  const favoriteStationId = Number(favorite?.stationId)
-  if (Number.isFinite(favoriteStationId) && favoriteStationId > 0) return favoriteStationId
-
+const selectFavorite = async (favorite) => {
+  // stationId 제거로 인해 가장 가까운 측정소를 찾아 표시
   const lat = Number(favorite?.lat)
   const lng = Number(favorite?.lng)
-  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Array.isArray(stations.value)) return null
-
-  let nearest = null
-  let nearestDistance = Number.POSITIVE_INFINITY
-  stations.value.forEach((station) => {
-    const stationId = Number(station?.id ?? station?.stationId)
-    const stationLat = Number(station?.lat)
-    const stationLng = Number(station?.lng)
-    if (!Number.isFinite(stationId) || stationId <= 0) return
-    if (!Number.isFinite(stationLat) || !Number.isFinite(stationLng)) return
-    const distance = (stationLat - lat) ** 2 + (stationLng - lng) ** 2
-    if (distance < nearestDistance) {
-      nearestDistance = distance
-      nearest = stationId
-    }
-  })
-  return nearest
-}
-
-const selectFavorite = async (favorite) => {
-  const stationId = resolveFavoriteStationId(favorite)
-  if (!stationId) {
-    setFavoritesMessage('해당 즐겨찾기와 연결된 환경 정보를 찾지 못했습니다.')
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    setFavoritesMessage('해당 즐겨찾기의 위치 정보를 찾지 못했습니다.')
     return
   }
-  await loadStationDetail(stationId)
-  const lat = Number(favorite?.lat)
-  const lng = Number(favorite?.lng)
-  if (map.value && Number.isFinite(lat) && Number.isFinite(lng)) {
+  
+  // 가장 가까운 측정소 찾기
+  let nearestStationId = null
+  let nearestDistance = Number.POSITIVE_INFINITY
+  if (Array.isArray(stations.value)) {
+    stations.value.forEach((station) => {
+      const stationId = Number(station?.id)
+      const stationLat = Number(station?.lat)
+      const stationLng = Number(station?.lng)
+      if (!Number.isFinite(stationId) || stationId <= 0) return
+      if (!Number.isFinite(stationLat) || !Number.isFinite(stationLng)) return
+      const distance = (stationLat - lat) ** 2 + (stationLng - lng) ** 2
+      if (distance < nearestDistance) {
+        nearestDistance = distance
+        nearestStationId = stationId
+      }
+    })
+  }
+  
+  if (nearestStationId) {
+    await loadStationDetail(nearestStationId)
+  }
+  
+  if (map.value) {
     map.value.setCenter(new window.kakao.maps.LatLng(lat, lng))
   }
 }
@@ -784,10 +782,10 @@ const initialize = async () => {
     })
     window.kakao.maps.event.addListener(map.value, 'idle', () => {
       loadStations()
-      loadPolygons()
+      // loadPolygons() // 폴리곤 비활성화
     })
     await loadStations()
-    await loadPolygons()
+    // await loadPolygons() // 폴리곤 비활성화
   } catch (err) {
     setGlobalMessage(err.message)
   }
@@ -863,7 +861,7 @@ onMounted(async () => {
   <div class="app">
     <TopBar :user="user" :providers="providers" :auth-loading="authLoading" @login="login" @logout="logout" />
 
-    <main class="layout layout--triple">
+    <main class="layout layout--double">
       <section class="panel panel--sidebar">
         <div class="panel__section panel__hero panel__hero--compact">
           <div class="hero__eyebrow">ATMO LIVE</div>
@@ -885,11 +883,26 @@ onMounted(async () => {
           </div>
         </div>
 
+        <StationDetail
+          v-if="selectedStation"
+          :selected-station="selectedStation"
+          :forecast-range="forecastRange"
+          :forecast-hours="forecastHours"
+          :format-forecast-time="formatForecastTime"
+          :format-precip-type="formatPrecipType"
+          :format-temperature="formatTemperature"
+          :format-wind-speed="formatWindSpeed"
+          :forecast-availability="forecastAvailability"
+          :forecast-range-options="forecastRangeOptions"
+          @set-forecast-range="setForecastRange"
+        />
+
         <FavoritesList
           :favorites="favorites"
           :cards-by-id="favoriteCardsById"
           :deleting-ids="deletingFavoriteIds"
           :message="favoritesMessage"
+          :favorite-cards="favoriteCards"
           @select="selectFavorite"
           @remove="removeFavorite"
           @add="openFavoriteAdd"
@@ -922,32 +935,6 @@ onMounted(async () => {
       </section>
 
       <div class="global-toast" v-if="globalMessage">{{ globalMessage }}</div>
-
-      <section class="panel panel--detail">
-        <StationDetail
-          v-if="selectedStation"
-          :selected-station="selectedStation"
-          :forecast-range="forecastRange"
-          :forecast-hours="forecastHours"
-          :format-forecast-time="formatForecastTime"
-          :format-precip-type="formatPrecipType"
-          :format-temperature="formatTemperature"
-          :format-wind-speed="formatWindSpeed"
-          :forecast-availability="forecastAvailability"
-          :forecast-range-options="forecastRangeOptions"
-          @set-forecast-range="setForecastRange"
-        />
-
-        <DashboardPanel
-          v-if="favoriteCards.length"
-          :favorite-cards="favoriteCards"
-          :limited-forecast="limitedForecast"
-          :format-forecast-time="formatForecastTime"
-          :format-precip-type="formatPrecipType"
-          :format-temperature="formatTemperature"
-          :format-wind-speed="formatWindSpeed"
-        />
-      </section>
     </main>
 
     <div v-if="authLoading && authModalVisible" class="auth-modal" role="dialog" aria-modal="true" aria-live="polite">
