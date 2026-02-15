@@ -304,7 +304,7 @@ const formatDataTime = (value) => {
 }
 
 .metric--ok {
-  color: #92400e;
+  color: #1d4ed8;
 }
 
 .metric--bad {
@@ -317,7 +317,8 @@ const formatDataTime = (value) => {
 
 .grade-label-small {
   font-size: 0.7rem;
-  color: #5f6f82;
+  color: inherit;
+  opacity: 0.85;
   font-weight: 500;
 }
 
@@ -351,7 +352,7 @@ const formatDataTime = (value) => {
 }
 
 .fav__dot--ok {
-  background: #f59e0b;
+  background: #2563eb;
 }
 
 .fav__dot--bad {
