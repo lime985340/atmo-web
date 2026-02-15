@@ -401,7 +401,7 @@ body {
 
 .layout--double {
   grid-template-columns: 380px 1fr;
-  align-items: start;
+  align-items: stretch;
   height: auto;
   min-height: calc(100vh - 80px);
 }
@@ -601,9 +601,9 @@ body {
 }
 
 .badge--bad {
-  background: rgba(249, 115, 22, 0.16);
-  color: #9a3412;
-  border-color: rgba(249, 115, 22, 0.28);
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+  border-color: rgba(220, 38, 38, 0.22);
 }
 
 .badge--verybad {
@@ -631,11 +631,11 @@ body {
 }
 
 .metric--bad {
-  color: #9a3412;
+  color: #dc2626;
 }
 
 .metric--verybad {
-  color: #991b1b;
+  color: #7f1d1d;
 }
 
 .grade-label {
@@ -970,13 +970,6 @@ body {
   min-height: calc(100vh - 140px);
 }
 
-.layout--double .map {
-  min-height: 0;
-}
-
-.layout--double .map__canvas {
-  min-height: 0;
-}
 
 .map__status {
   position: absolute;

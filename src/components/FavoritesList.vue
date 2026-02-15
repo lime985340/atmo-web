@@ -62,16 +62,22 @@ const dotClass = (card) => {
   return 'fav__dot fav__dot--unknown'
 }
 
-// 환경 상세와 동일한 metric 클래스 계산
-const metricClass = (card) => {
-  if (!card) return 'metric'
-  const rawGrade = Number(card.grade)
-  const grade = Number.isFinite(rawGrade) ? rawGrade : gradeFromPm(card.pm25, card.pm10)
-  if (grade === 1) return 'metric metric--good'
-  if (grade === 2) return 'metric metric--ok'
-  if (grade === 3) return 'metric metric--bad'
-  if (grade === 4) return 'metric metric--verybad'
-  return 'metric'
+const metricClassFromPm10 = (value) => {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return 'metric'
+  if (num <= 30) return 'metric metric--good'
+  if (num <= 80) return 'metric metric--ok'
+  if (num <= 150) return 'metric metric--bad'
+  return 'metric metric--verybad'
+}
+
+const metricClassFromPm25 = (value) => {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return 'metric'
+  if (num <= 15) return 'metric metric--good'
+  if (num <= 35) return 'metric metric--ok'
+  if (num <= 75) return 'metric metric--bad'
+  return 'metric metric--verybad'
 }
 
 const formatTemperature = (value) => {
@@ -154,11 +160,11 @@ const formatDataTime = (value) => {
           <div class="fav-grid">
             <div>
               <span class="fav-label">미세먼지 (PM10)</span>
-              <strong :class="metricClass(card)">{{ card.pm10 ?? '-' }} <span class="grade-label-small">({{ getPm10Label(card.pm10) }})</span></strong>
+              <strong :class="metricClassFromPm10(card.pm10)">{{ card.pm10 ?? '-' }} <span class="grade-label-small">({{ getPm10Label(card.pm10) }})</span></strong>
             </div>
             <div>
               <span class="fav-label">초미세먼지 (PM2.5)</span>
-              <strong :class="metricClass(card)">{{ card.pm25 ?? '-' }} <span class="grade-label-small">({{ getPm25Label(card.pm25) }})</span></strong>
+              <strong :class="metricClassFromPm25(card.pm25)">{{ card.pm25 ?? '-' }} <span class="grade-label-small">({{ getPm25Label(card.pm25) }})</span></strong>
             </div>
             <div>
               <span class="fav-label">온도</span>
@@ -308,11 +314,11 @@ const formatDataTime = (value) => {
 }
 
 .metric--bad {
-  color: #9a3412;
+  color: #dc2626;
 }
 
 .metric--verybad {
-  color: #991b1b;
+  color: #7f1d1d;
 }
 
 .grade-label-small {
@@ -356,11 +362,11 @@ const formatDataTime = (value) => {
 }
 
 .fav__dot--bad {
-  background: #f97316;
+  background: #dc2626;
 }
 
 .fav__dot--verybad {
-  background: #ef4444;
+  background: #7f1d1d;
 }
 
 .fav__dot--unknown {

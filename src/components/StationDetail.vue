@@ -91,6 +91,24 @@ const pmMetricClass = computed(() => {
   return 'metric'
 })
 
+const metricClassFromPm10 = (value) => {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return 'metric'
+  if (num <= 30) return 'metric metric--good'
+  if (num <= 80) return 'metric metric--ok'
+  if (num <= 150) return 'metric metric--bad'
+  return 'metric metric--verybad'
+}
+
+const metricClassFromPm25 = (value) => {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return 'metric'
+  if (num <= 15) return 'metric metric--good'
+  if (num <= 35) return 'metric metric--ok'
+  if (num <= 75) return 'metric metric--bad'
+  return 'metric metric--verybad'
+}
+
 const resolveSkyIcon = (skyRaw) => {
   const value = Number(skyRaw)
   if (value === 1) return '☀️'
@@ -184,11 +202,11 @@ const formatDataTime = (value) => {
       <div class="grid">
         <div>
           <span class="label">미세먼지 (PM10)</span>
-          <strong :class="pmMetricClass">{{ props.selectedStation.air?.pm10 ?? '-' }} <span class="grade-label">({{ getPm10Label(props.selectedStation.air?.pm10) }})</span></strong>
+          <strong :class="metricClassFromPm10(props.selectedStation.air?.pm10)">{{ props.selectedStation.air?.pm10 ?? '-' }} <span class="grade-label">({{ getPm10Label(props.selectedStation.air?.pm10) }})</span></strong>
         </div>
         <div>
           <span class="label">초미세먼지 (PM2.5)</span>
-          <strong :class="pmMetricClass">{{ props.selectedStation.air?.pm25 ?? '-' }} <span class="grade-label">({{ getPm25Label(props.selectedStation.air?.pm25) }})</span></strong>
+          <strong :class="metricClassFromPm25(props.selectedStation.air?.pm25)">{{ props.selectedStation.air?.pm25 ?? '-' }} <span class="grade-label">({{ getPm25Label(props.selectedStation.air?.pm25) }})</span></strong>
         </div>
         <div>
           <span class="label">온도</span>
