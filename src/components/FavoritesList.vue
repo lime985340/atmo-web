@@ -300,11 +300,11 @@ const formatDataTime = (value) => {
 }
 
 .metric--good {
-  color: #166534;
+  color: #16a34a;
 }
 
 .metric--ok {
-  color: #1d4ed8;
+  color: #2563eb;
 }
 
 .metric--bad {

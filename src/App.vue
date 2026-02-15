@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import TopBar from './components/TopBar.vue'
 import StationDetail from './components/StationDetail.vue'
 import FavoritesList from './components/FavoritesList.vue'
@@ -11,6 +11,8 @@ const FORECAST_API_HORIZON_HOURS = 6
 
 const mapEl = ref(null)
 const map = ref(null)
+let mapResizeObserver = null
+let mapRelayoutRaf = 0
 const stationMarkers = ref([])
 const polygonOverlays = ref([])
 const polygonCache = new Map()
@@ -449,6 +451,10 @@ const loadFavorites = async () => {
     
     // 디버깅: 처리된 데이터 로깅
     console.log('[DEBUG] Processed favoriteCards:', favoriteCards.value)
+
+    // 즐겨찾기 목록이 늘어나며 레이아웃이 변할 수 있어, 지도 relayout을 한번 보장
+    await nextTick()
+    scheduleMapRelayout()
   } catch (err) {
     const message = err instanceof Error ? err.message : '즐겨찾기 데이터를 불러오지 못했습니다.'
     setFavoritesMessage(message)
@@ -839,6 +845,12 @@ const initialize = async () => {
       center: new window.kakao.maps.LatLng(37.5665, 126.978),
       level: 7
     })
+
+    // KakaoMap은 컨테이너 크기 변경 시 자동 리레이아웃이 되지 않아서,
+    // 사이드바가 늘어나며 map 영역 높이가 바뀌는 경우 타일이 비어 보일 수 있음.
+    // ResizeObserver로 map.relayout()를 호출해 렌더링을 강제 갱신한다.
+    setupMapResizeObserver()
+
     window.kakao.maps.event.addListener(map.value, 'idle', () => {
       loadStations()
       // loadPolygons() // 폴리곤 비활성화
@@ -849,6 +861,39 @@ const initialize = async () => {
     setGlobalMessage(err.message)
   }
 }
+
+const scheduleMapRelayout = () => {
+  if (!map.value) return
+  if (mapRelayoutRaf) cancelAnimationFrame(mapRelayoutRaf)
+  mapRelayoutRaf = requestAnimationFrame(() => {
+    mapRelayoutRaf = 0
+    try {
+      const center = map.value.getCenter()
+      map.value.relayout()
+      map.value.setCenter(center)
+    } catch {
+      // relayout 실패는 UX에만 영향, 무시
+    }
+  })
+}
+
+const setupMapResizeObserver = () => {
+  if (!mapEl.value || !window.ResizeObserver) return
+  if (mapResizeObserver) return
+  mapResizeObserver = new ResizeObserver(() => {
+    scheduleMapRelayout()
+  })
+  mapResizeObserver.observe(mapEl.value)
+}
+
+onUnmounted(() => {
+  if (mapResizeObserver && mapEl.value) {
+    mapResizeObserver.unobserve(mapEl.value)
+  }
+  mapResizeObserver = null
+  if (mapRelayoutRaf) cancelAnimationFrame(mapRelayoutRaf)
+  mapRelayoutRaf = 0
+})
 
 const formatForecastTime = (value) => {
   if (!value) return '-'
