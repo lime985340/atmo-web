@@ -581,9 +581,15 @@ const showFavoriteLocationMarker = (lat, lng) => {
     favoriteLocationMarker.value = null
   }
   
-  // 기본 마커와 동일한 모양, 색상만 초록색으로 변경
+  // 측정소 기본 마커와 같은 "핀" 형태로, 색상만 초록색으로 표시
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="35" viewBox="0 0 24 35">
+      <path d="M12 0C5.9 0 1 4.9 1 11c0 8.4 11 24 11 24s11-15.6 11-24C23 4.9 18.1 0 12 0z" fill="#22c55e" stroke="#ffffff" stroke-width="2"/>
+      <circle cx="12" cy="11" r="4" fill="#ffffff"/>
+    </svg>
+  `.trim()
   const markerImage = new window.kakao.maps.MarkerImage(
-    'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png',
+    'data:image/svg+xml;base64,' + btoa(svg),
     new window.kakao.maps.Size(24, 35),
     { offset: new window.kakao.maps.Point(12, 35) }
   )
@@ -752,6 +758,8 @@ const renderStationMarkers = (items) => {
           position: new window.kakao.maps.LatLng(item.lat, item.lng)
         })
         window.kakao.maps.event.addListener(marker, 'click', () => {
+          // 측정소 마커 클릭 시: 즐겨찾기 위치 정보는 해제하고 측정소 주소/이름을 보여준다.
+          selectedFavoriteLocation.value = null
           loadStationDetail(stationId)
         })
         return marker
