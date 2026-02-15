@@ -424,6 +424,11 @@ const loadFavorites = async () => {
       apiFetch('/favorites'),
       apiFetch('/favorites/dashboard')
     ])
+    
+    // 디버깅: API 응답 로깅
+    console.log('[DEBUG] Favorites API response:', favoriteList)
+    console.log('[DEBUG] Dashboard API response:', dashboardList)
+    
     if (requestSeq !== favoritesRequestSeq.value) return
 
     const seenFavorites = new Set()
@@ -441,6 +446,9 @@ const loadFavorites = async () => {
       seenCards.add(key)
       return true
     })
+    
+    // 디버깅: 처리된 데이터 로깅
+    console.log('[DEBUG] Processed favoriteCards:', favoriteCards.value)
   } catch (err) {
     const message = err instanceof Error ? err.message : '즐겨찾기 데이터를 불러오지 못했습니다.'
     setFavoritesMessage(message)
@@ -573,13 +581,26 @@ const showFavoriteLocationMarker = (lat, lng) => {
     favoriteLocationMarker.value = null
   }
   
-  // 새 마커 생성
-  const marker = new window.kakao.maps.Marker({
+  // 현대적인 커스텀 마커 생성 (파란색 원형 마커)
+  const markerContent = document.createElement('div')
+  markerContent.className = 'favorite-marker'
+  markerContent.innerHTML = `
+    <div class="favorite-marker__pin">
+      <div class="favorite-marker__pulse"></div>
+    </div>
+  `
+  
+  const marker = new window.kakao.maps.CustomOverlay({
     position: new window.kakao.maps.LatLng(lat, lng),
-    map: map.value
+    content: markerContent,
+    map: map.value,
+    yAnchor: 1
   })
   
   favoriteLocationMarker.value = marker
+  
+  // 줌 인 (더 가까이 보기)
+  map.value.setLevel(4, { animate: true })
 }
 
 const loadStations = async () => {
@@ -614,6 +635,10 @@ const loadStationDetail = async (stationId) => {
   }
   try {
     selectedStation.value = await apiFetch(`/stations/${resolvedId}`)
+    
+    // 디버깅: 측정소 상세 데이터 로깅
+    console.log('[DEBUG] Station detail:', selectedStation.value)
+    
     const data = await apiFetch(`/stations/${resolvedId}/forecast?hours=${FORECAST_API_HORIZON_HOURS}`)
     allForecastHours.value = Array.isArray(data) ? data : []
     applyForecastRange(forecastRange.value)
@@ -724,13 +749,27 @@ const renderStationMarkers = (items) => {
     ...sanitized
       .map((item) => {
         const stationId = item.stationId
-        const marker = new window.kakao.maps.Marker({
-          map: map.value,
-          position: new window.kakao.maps.LatLng(item.lat, item.lng)
+        
+        // 현대적인 커스텀 마커 생성
+        const markerContent = document.createElement('div')
+        markerContent.className = 'station-marker'
+        markerContent.innerHTML = `
+          <div class="station-marker__dot"></div>
+        `
+        
+        const marker = new window.kakao.maps.CustomOverlay({
+          position: new window.kakao.maps.LatLng(item.lat, item.lng),
+          content: markerContent,
+          yAnchor: 0.5
         })
-        window.kakao.maps.event.addListener(marker, 'click', () => {
+        
+        marker.setMap(map.value)
+        
+        // 클릭 이벤트 추가
+        markerContent.addEventListener('click', () => {
           loadStationDetail(stationId)
         })
+        
         return marker
       })
   )
