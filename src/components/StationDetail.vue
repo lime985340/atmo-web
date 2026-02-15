@@ -6,6 +6,10 @@ const props = defineProps({
     type: Object,
     required: true
   },
+  favoriteLocation: {
+    type: Object,
+    default: null
+  },
   forecastRange: {
     type: Number,
     required: true
@@ -136,6 +140,19 @@ const getPm25Label = (value) => {
   if (num <= 75) return '나쁨'
   return '매우나쁨'
 }
+
+// 데이터 시간 포맷팅
+const formatDataTime = (value) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('ko-KR', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
 </script>
 
 <template>
@@ -144,8 +161,8 @@ const getPm25Label = (value) => {
     <div class="card">
       <div class="env__header">
         <div>
-          <p class="card__title">{{ props.selectedStation.name }}</p>
-          <p class="card__meta">{{ props.selectedStation.addr || '주소 없음' }}</p>
+          <p class="card__title">{{ props.favoriteLocation?.description || props.selectedStation.name }}</p>
+          <p class="card__meta">{{ props.favoriteLocation?.address || props.selectedStation.addr || '주소 없음' }}</p>
         </div>
         <span :class="pmGradeClass">{{ pmGradeLabel }}</span>
       </div>
@@ -156,6 +173,12 @@ const getPm25Label = (value) => {
           습도 {{ props.selectedStation.weather?.humidity ?? '-' }}% · 풍속 {{ props.formatWindSpeed(props.selectedStation.weather?.windSpeed) }}m/s
         </span>
       </div>
+      
+      <!-- 측정 시간 표시 -->
+      <p class="env__time" v-if="props.selectedStation.air?.dataTime || props.selectedStation.weather?.obsTime">
+        측정 시간: {{ formatDataTime(props.selectedStation.air?.dataTime || props.selectedStation.weather?.obsTime) }}
+      </p>
+
       <div class="grid">
         <div>
           <span class="label">미세먼지 (PM10)</span>

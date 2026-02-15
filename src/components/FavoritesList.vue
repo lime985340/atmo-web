@@ -62,6 +62,18 @@ const dotClass = (card) => {
   return 'fav__dot fav__dot--unknown'
 }
 
+// 환경 상세와 동일한 metric 클래스 계산
+const metricClass = (card) => {
+  if (!card) return 'metric'
+  const rawGrade = Number(card.grade)
+  const grade = Number.isFinite(rawGrade) ? rawGrade : gradeFromPm(card.pm25, card.pm10)
+  if (grade === 1) return 'metric metric--good'
+  if (grade === 2) return 'metric metric--ok'
+  if (grade === 3) return 'metric metric--bad'
+  if (grade === 4) return 'metric metric--verybad'
+  return 'metric'
+}
+
 const formatTemperature = (value) => {
   if (value === null || value === undefined || value === '') return '-'
   const num = Number(value)
@@ -135,7 +147,19 @@ const formatDataTime = (value) => {
               </button>
             </div>
           </div>
+          <!-- 구분선 -->
+          <div class="fav-card__divider"></div>
+          
+          <!-- 환경 상세와 동일한 순서: 미세→초미세→온도→습도 -->
           <div class="fav-grid">
+            <div>
+              <span class="fav-label">미세먼지 (PM10)</span>
+              <strong :class="metricClass(card)">{{ card.pm10 ?? '-' }} <span class="grade-label-small">({{ getPm10Label(card.pm10) }})</span></strong>
+            </div>
+            <div>
+              <span class="fav-label">초미세먼지 (PM2.5)</span>
+              <strong :class="metricClass(card)">{{ card.pm25 ?? '-' }} <span class="grade-label-small">({{ getPm25Label(card.pm25) }})</span></strong>
+            </div>
             <div>
               <span class="fav-label">온도</span>
               <strong>{{ formatTemperature(card.tempC) }}°C</strong>
@@ -143,14 +167,6 @@ const formatDataTime = (value) => {
             <div>
               <span class="fav-label">습도</span>
               <strong>{{ card.humidity ?? '-' }}%</strong>
-            </div>
-            <div>
-              <span class="fav-label">미세먼지</span>
-              <strong>{{ card.pm10 ?? '-' }} <span class="grade-label-small">({{ getPm10Label(card.pm10) }})</span></strong>
-            </div>
-            <div>
-              <span class="fav-label">초미세먼지</span>
-              <strong>{{ card.pm25 ?? '-' }} <span class="grade-label-small">({{ getPm25Label(card.pm25) }})</span></strong>
             </div>
           </div>
           <!-- 데이터 시간 표시 -->
@@ -269,6 +285,34 @@ const formatDataTime = (value) => {
 .fav-card__stale {
   color: #e05d3c;
   font-weight: 600;
+}
+
+/* 구분선 */
+.fav-card__divider {
+  height: 1px;
+  background: rgba(15, 23, 42, 0.1);
+  margin: 12px 0;
+}
+
+/* metric 클래스 - 환경 상세와 동일 */
+.metric {
+  font-variant-numeric: tabular-nums;
+}
+
+.metric--good {
+  color: #166534;
+}
+
+.metric--ok {
+  color: #92400e;
+}
+
+.metric--bad {
+  color: #9a3412;
+}
+
+.metric--verybad {
+  color: #991b1b;
 }
 
 .grade-label-small {

@@ -26,6 +26,7 @@ const deletingFavoriteIds = ref([])
 const stations = ref([])
 const stationsRequestSeq = ref(0)
 const selectedStation = ref(null)
+const selectedFavoriteLocation = ref(null)
 const forecastHours = ref([])
 const allForecastHours = ref([])
 const forecastRange = ref(FORECAST_API_HORIZON_HOURS)
@@ -518,8 +519,17 @@ const removeFavorite = async (favoriteId) => {
   }
 }
 
+const favoriteLocationMarker = ref(null)
+
 const selectFavorite = async (favorite) => {
-  // stationId 제거로 인해 가장 가까운 측정소를 찾아 표시
+  // 즐겨찾기 위치 정보 저장 (환경 상세에 표시용)
+  selectedFavoriteLocation.value = {
+    description: favorite?.description,
+    address: favorite?.address,
+    lat: Number(favorite?.lat),
+    lng: Number(favorite?.lng)
+  }
+  
   const lat = Number(favorite?.lat)
   const lng = Number(favorite?.lng)
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -551,7 +561,25 @@ const selectFavorite = async (favorite) => {
   
   if (map.value) {
     map.value.setCenter(new window.kakao.maps.LatLng(lat, lng))
+    // 즐겨찾기 위치 마커 표시
+    showFavoriteLocationMarker(lat, lng)
   }
+}
+
+const showFavoriteLocationMarker = (lat, lng) => {
+  // 기존 마커 제거
+  if (favoriteLocationMarker.value) {
+    favoriteLocationMarker.value.setMap(null)
+    favoriteLocationMarker.value = null
+  }
+  
+  // 새 마커 생성
+  const marker = new window.kakao.maps.Marker({
+    position: new window.kakao.maps.LatLng(lat, lng),
+    map: map.value
+  })
+  
+  favoriteLocationMarker.value = marker
 }
 
 const loadStations = async () => {
@@ -886,6 +914,7 @@ onMounted(async () => {
         <StationDetail
           v-if="selectedStation"
           :selected-station="selectedStation"
+          :favorite-location="selectedFavoriteLocation"
           :forecast-range="forecastRange"
           :forecast-hours="forecastHours"
           :format-forecast-time="formatForecastTime"

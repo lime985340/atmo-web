@@ -557,6 +557,12 @@ body {
   font-weight: 600;
 }
 
+.env__time {
+  margin: 0 0 12px 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
