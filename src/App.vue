@@ -337,7 +337,6 @@ const submitFavoriteAdd = async () => {
 }
 
 const login = async (provider) => {
-  authLoading.value = true
   authModalVisible.value = true
   try {
     const returnTo = `${window.location.origin}${window.location.pathname}`
@@ -346,7 +345,6 @@ const login = async (provider) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : '로그인 요청에 실패했습니다.'
     setGlobalMessage(message)
-    authLoading.value = false
     authModalVisible.value = false
   }
 }
@@ -928,9 +926,6 @@ const formatPrecipType = (value) => {
 onMounted(async () => {
   const hasAccessTokenFromStorage = Boolean(accessToken.value)
   const hasAccessTokenInHash = window.location.hash.includes('access_token=')
-  
-  // authLoading은 이미 true로 초기화됨 (로그인 버튼 숨김)
-  authModalVisible.value = hasAccessTokenInHash
 
   if (hasAccessTokenInHash) {
     const hash = new URLSearchParams(window.location.hash.replace('#', ''))
@@ -953,9 +948,6 @@ onMounted(async () => {
   ;(async () => {
     try {
       if (!accessToken.value || isJwtExpiredOrNearExpiry(accessToken.value)) {
-        // Try to restore session using refresh_token cookie.
-        // Also refresh proactively if stored access token is expired/near-expiry
-        // to avoid a burst of initial 401s during bootstrap.
         await refreshAccessToken()
       }
 
@@ -1066,7 +1058,7 @@ onMounted(async () => {
       <div class="global-toast" v-if="globalMessage">{{ globalMessage }}</div>
     </main>
 
-    <div v-if="authLoading && authModalVisible" class="auth-modal" role="dialog" aria-modal="true" aria-live="polite">
+    <div v-if="authModalVisible" class="auth-modal" role="dialog" aria-modal="true" aria-live="polite">
       <div class="auth-modal__backdrop"></div>
       <div class="auth-modal__panel">
         <span class="auth-modal__spinner" aria-hidden="true"></span>
