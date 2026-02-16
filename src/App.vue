@@ -20,10 +20,11 @@ const lastPolygonKey = ref('')
 
 const loading = ref(false)
 const user = ref(null)
-const authLoading = ref(true)
+const authLoading = ref(false)
 const authModalVisible = ref(false)
 const accessToken = ref(localStorage.getItem('accessToken') || '')
 const deletingFavoriteIds = ref([])
+const stationDetailLoading = ref(false)
 
 const stations = ref([])
 const stationsRequestSeq = ref(0)
@@ -643,18 +644,29 @@ const loadStationDetail = async (stationId) => {
     setGlobalMessage('대상 식별자를 확인할 수 없습니다.')
     return
   }
+  
+  // 이전 선택된 측정소는 유지하되 로딩 상태 표시 (또는 null로 설정)
+  stationDetailLoading.value = true
+  
   try {
-    selectedStation.value = await apiFetch(`/stations/${resolvedId}`)
+    // 측정소 상세 정보 로드
+    const stationData = await apiFetch(`/stations/${resolvedId}`)
+    selectedStation.value = stationData
     
     // 디버깅: 측정소 상세 데이터 로깅
     console.log('[DEBUG] Station detail:', selectedStation.value)
     
-    const data = await apiFetch(`/stations/${resolvedId}/forecast?hours=${FORECAST_API_HORIZON_HOURS}`)
-    allForecastHours.value = Array.isArray(data) ? data : []
+    // 예보 데이터 로드
+    const forecastData = await apiFetch(`/stations/${resolvedId}/forecast?hours=${FORECAST_API_HORIZON_HOURS}`)
+    allForecastHours.value = Array.isArray(forecastData) ? forecastData : []
     applyForecastRange(forecastRange.value)
   } catch (err) {
     const message = err instanceof Error ? err.message : '환경 상세를 불러오지 못했습니다.'
     setGlobalMessage(message)
+    // 에러 발생 시 selectedStation을 null로 설정하여 에러 상태 표시
+    selectedStation.value = null
+  } finally {
+    stationDetailLoading.value = false
   }
 }
 
@@ -916,7 +928,9 @@ const formatPrecipType = (value) => {
 onMounted(async () => {
   const hasAccessTokenFromStorage = Boolean(accessToken.value)
   const hasAccessTokenInHash = window.location.hash.includes('access_token=')
-  authLoading.value = hasAccessTokenFromStorage || hasAccessTokenInHash
+  
+  // 초기 로딩 시 항상 로그인 확인 중 상태로 설정 (로그인 버튼 숨김)
+  authLoading.value = true
   authModalVisible.value = hasAccessTokenInHash
 
   if (hasAccessTokenInHash) {
@@ -928,36 +942,44 @@ onMounted(async () => {
       window.history.replaceState({}, document.title, window.location.pathname)
     }
   }
-  try {
-    if (!accessToken.value || isJwtExpiredOrNearExpiry(accessToken.value)) {
-      // Try to restore session using refresh_token cookie.
-      // Also refresh proactively if stored access token is expired/near-expiry
-      // to avoid a burst of initial 401s during bootstrap.
-      await refreshAccessToken()
-    }
-
-    if (accessToken.value) {
-      await loadMe()
-      if (!user.value) {
+  
+  // 지도 초기화와 인증을 병렬로 실행 (지도는 인증과 무관하므로)
+  const initPromise = initialize()
+  
+  const authPromise = (async () => {
+    try {
+      if (!accessToken.value || isJwtExpiredOrNearExpiry(accessToken.value)) {
+        // Try to restore session using refresh_token cookie.
+        // Also refresh proactively if stored access token is expired/near-expiry
+        // to avoid a burst of initial 401s during bootstrap.
         await refreshAccessToken()
-        if (accessToken.value) {
-          await loadMe()
+      }
+
+      if (accessToken.value) {
+        await loadMe()
+        if (!user.value) {
+          await refreshAccessToken()
+          if (accessToken.value) {
+            await loadMe()
+          }
         }
+        if (user.value) {
+          await loadFavorites()
+        }
+      } else {
+        user.value = null
       }
-      if (user.value) {
-        await loadFavorites()
-      }
-    } else {
-      user.value = null
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '로그인 정보를 확인하는 중 오류가 발생했습니다.'
+      setGlobalMessage(message)
+    } finally {
+      authLoading.value = false
+      authModalVisible.value = false
     }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : '로그인 정보를 확인하는 중 오류가 발생했습니다.'
-    setGlobalMessage(message)
-  } finally {
-    authLoading.value = false
-    authModalVisible.value = false
-  }
-  await initialize()
+  })()
+  
+  // 두 작업이 모두 완료될 때까지 대기
+  await Promise.all([initPromise, authPromise])
 })
 </script>
 
@@ -999,6 +1021,7 @@ onMounted(async () => {
           :format-wind-speed="formatWindSpeed"
           :forecast-availability="forecastAvailability"
           :forecast-range-options="forecastRangeOptions"
+          :is-loading="stationDetailLoading"
           @set-forecast-range="setForecastRange"
         />
 
