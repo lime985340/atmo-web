@@ -1004,7 +1004,7 @@ onMounted(async () => {
             </div>
             <div class="stat">
               <span class="stat__label">선택</span>
-              <strong class="stat__value">{{ selectedStation?.name || '-' }}</strong>
+              <strong class="stat__value">{{ selectedFavoriteLocation?.description || selectedStation?.name || '-' }}</strong>
             </div>
           </div>
         </div>
