@@ -20,7 +20,7 @@ const lastPolygonKey = ref('')
 
 const loading = ref(false)
 const user = ref(null)
-const authLoading = ref(false)
+const authLoading = ref(true)  // 초기 로딩 시 항상 true로 설정
 const authModalVisible = ref(false)
 const accessToken = ref(localStorage.getItem('accessToken') || '')
 const deletingFavoriteIds = ref([])
@@ -1065,7 +1065,7 @@ onMounted(async () => {
       <div class="global-toast" v-if="globalMessage">{{ globalMessage }}</div>
     </main>
 
-    <div v-if="authLoading && authModalVisible" class="auth-modal" role="dialog" aria-modal="true" aria-live="polite">
+    <div v-if="authLoading" class="auth-modal" role="dialog" aria-modal="true" aria-live="polite">
       <div class="auth-modal__backdrop"></div>
       <div class="auth-modal__panel">
         <span class="auth-modal__spinner" aria-hidden="true"></span>
