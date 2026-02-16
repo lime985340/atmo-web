@@ -1066,7 +1066,7 @@ onMounted(async () => {
       <div class="global-toast" v-if="globalMessage">{{ globalMessage }}</div>
     </main>
 
-    <div v-if="authLoading" class="auth-modal" role="dialog" aria-modal="true" aria-live="polite">
+    <div v-if="authLoading && authModalVisible" class="auth-modal" role="dialog" aria-modal="true" aria-live="polite">
       <div class="auth-modal__backdrop"></div>
       <div class="auth-modal__panel">
         <span class="auth-modal__spinner" aria-hidden="true"></span>
