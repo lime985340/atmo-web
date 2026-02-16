@@ -10,6 +10,10 @@ const props = defineProps({
     type: Object,
     default: null
   },
+  isLoading: {
+    type: Boolean,
+    default: false
+  },
   forecastRange: {
     type: Number,
     required: true
@@ -177,72 +181,80 @@ const formatDataTime = (value) => {
   <div class="panel__section">
     <h2>환경 상세</h2>
     <div class="card">
-      <div class="env__header">
-        <div>
-          <p class="card__title">{{ props.favoriteLocation?.description || props.selectedStation.name }}</p>
-          <p class="card__meta">{{ props.favoriteLocation?.address || props.selectedStation.addr || '주소 없음' }}</p>
-        </div>
-        <div class="env__grade-badge" title="미세먼지 등급">
-          <span :class="pmGradeClass">{{ pmGradeLabel }}</span>
-        </div>
-      </div>
-
-      <div class="env__weather">
-        <span class="env__weather-icon" aria-hidden="true">{{ weatherIcon }}</span>
-        <span class="env__weather-meta">
-          습도 {{ props.selectedStation.weather?.humidity ?? '-' }}% · 풍속 {{ props.formatWindSpeed(props.selectedStation.weather?.windSpeed) }}m/s
-        </span>
+      <!-- 로딩 상태 표시 -->
+      <div v-if="props.isLoading" class="env__loading">
+        <span class="env__spinner" aria-hidden="true"></span>
+        <p class="env__loading-text">데이터를 불러오는 중...</p>
       </div>
       
-      <!-- 측정 시간 표시 -->
-      <p class="env__time" v-if="props.selectedStation.air?.dataTime || props.selectedStation.weather?.obsTime">
-        측정 시간: {{ formatDataTime(props.selectedStation.air?.dataTime || props.selectedStation.weather?.obsTime) }}
-      </p>
+      <template v-else>
+        <div class="env__header">
+          <div>
+            <p class="card__title">{{ props.favoriteLocation?.description || props.selectedStation.name }}</p>
+            <p class="card__meta">{{ props.favoriteLocation?.address || props.selectedStation.addr || '주소 없음' }}</p>
+          </div>
+          <div class="env__grade-badge" title="미세먼지 등급">
+            <span :class="pmGradeClass">{{ pmGradeLabel }}</span>
+          </div>
+        </div>
 
-      <div class="grid">
-        <div>
-          <span class="label">미세먼지 (PM10)</span>
-          <strong :class="metricClassFromPm10(props.selectedStation.air?.pm10)">{{ props.selectedStation.air?.pm10 ?? '-' }} <span class="grade-label">({{ getPm10Label(props.selectedStation.air?.pm10) }})</span></strong>
+        <div class="env__weather">
+          <span class="env__weather-icon" aria-hidden="true">{{ weatherIcon }}</span>
+          <span class="env__weather-meta">
+            습도 {{ props.selectedStation.weather?.humidity ?? '-' }}% · 풍속 {{ props.formatWindSpeed(props.selectedStation.weather?.windSpeed) }}m/s
+          </span>
         </div>
-        <div>
-          <span class="label">초미세먼지 (PM2.5)</span>
-          <strong :class="metricClassFromPm25(props.selectedStation.air?.pm25)">{{ props.selectedStation.air?.pm25 ?? '-' }} <span class="grade-label">({{ getPm25Label(props.selectedStation.air?.pm25) }})</span></strong>
-        </div>
-        <div>
-          <span class="label">온도</span>
-          <strong>{{ props.formatTemperature(props.selectedStation.weather?.temp) }}°C</strong>
-        </div>
-        <div>
-          <span class="label">습도</span>
-          <strong>{{ props.selectedStation.weather?.humidity ?? '-' }}%</strong>
-        </div>
-      </div>
-      <div class="forecast">
-        <div class="forecast__header">
-          <h3>예보</h3>
-        </div>
-        <div class="forecast__table" v-if="props.forecastHours.length">
-          <div class="forecast__row forecast__row--head" aria-hidden="true">
-            <span class="forecast__meta">시간</span>
-            <span class="forecast__meta">기온</span>
-            <span class="forecast__meta">습도</span>
-            <span class="forecast__meta">풍속</span>
-            <span class="forecast__meta">강수형태</span>
-            <span class="forecast__meta">강수량</span>
-            <span class="forecast__meta">강수확률</span>
+        
+        <!-- 측정 시간 표시 -->
+        <p class="env__time" v-if="props.selectedStation.air?.dataTime || props.selectedStation.weather?.obsTime">
+          측정 시간: {{ formatDataTime(props.selectedStation.air?.dataTime || props.selectedStation.weather?.obsTime) }}
+        </p>
+
+        <div class="grid">
+          <div>
+            <span class="label">미세먼지 (PM10)</span>
+            <strong :class="metricClassFromPm10(props.selectedStation.air?.pm10)">{{ props.selectedStation.air?.pm10 ?? '-' }} <span class="grade-label">({{ getPm10Label(props.selectedStation.air?.pm10) }})</span></strong>
           </div>
-          <div class="forecast__row" v-for="hour in props.forecastHours" :key="hour.forecastAt">
-            <span class="forecast__time">{{ props.formatForecastTime(hour.forecastAt) }}</span>
-            <span class="forecast__temp">{{ props.formatTemperature(hour.tempC) }}°C</span>
-            <span class="forecast__meta">{{ hour.humidity ?? '-' }}%</span>
-            <span class="forecast__meta">{{ props.formatWindSpeed(hour.windSpeed) }}m/s</span>
-            <span class="forecast__meta">{{ props.formatPrecipType(hour.precipType) }}</span>
-            <span class="forecast__meta">{{ hour.precipMm ?? '-' }}mm</span>
-            <span class="forecast__meta">{{ hour.pop ?? '-' }}%</span>
+          <div>
+            <span class="label">초미세먼지 (PM2.5)</span>
+            <strong :class="metricClassFromPm25(props.selectedStation.air?.pm25)">{{ props.selectedStation.air?.pm25 ?? '-' }} <span class="grade-label">({{ getPm25Label(props.selectedStation.air?.pm25) }})</span></strong>
+          </div>
+          <div>
+            <span class="label">온도</span>
+            <strong>{{ props.formatTemperature(props.selectedStation.weather?.temp) }}°C</strong>
+          </div>
+          <div>
+            <span class="label">습도</span>
+            <strong>{{ props.selectedStation.weather?.humidity ?? '-' }}%</strong>
           </div>
         </div>
-        <p class="forecast__empty" v-else>예보 데이터가 없습니다.</p>
-      </div>
+        <div class="forecast">
+          <div class="forecast__header">
+            <h3>예보</h3>
+          </div>
+          <div class="forecast__table" v-if="props.forecastHours.length">
+            <div class="forecast__row forecast__row--head" aria-hidden="true">
+              <span class="forecast__meta">시간</span>
+              <span class="forecast__meta">기온</span>
+              <span class="forecast__meta">습도</span>
+              <span class="forecast__meta">풍속</span>
+              <span class="forecast__meta">강수형태</span>
+              <span class="forecast__meta">강수량</span>
+              <span class="forecast__meta">강수확률</span>
+            </div>
+            <div class="forecast__row" v-for="hour in props.forecastHours" :key="hour.forecastAt">
+              <span class="forecast__time">{{ props.formatForecastTime(hour.forecastAt) }}</span>
+              <span class="forecast__temp">{{ props.formatTemperature(hour.tempC) }}°C</span>
+              <span class="forecast__meta">{{ hour.humidity ?? '-' }}%</span>
+              <span class="forecast__meta">{{ props.formatWindSpeed(hour.windSpeed) }}m/s</span>
+              <span class="forecast__meta">{{ props.formatPrecipType(hour.precipType) }}</span>
+              <span class="forecast__meta">{{ hour.precipMm ?? '-' }}mm</span>
+              <span class="forecast__meta">{{ hour.pop ?? '-' }}%</span>
+            </div>
+          </div>
+          <p class="forecast__empty" v-else>예보 데이터가 없습니다.</p>
+        </div>
+      </template>
     </div>
   </div>
 </template>
