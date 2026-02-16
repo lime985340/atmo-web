@@ -929,8 +929,7 @@ onMounted(async () => {
   const hasAccessTokenFromStorage = Boolean(accessToken.value)
   const hasAccessTokenInHash = window.location.hash.includes('access_token=')
   
-  // 초기 로딩 시 항상 로그인 확인 중 상태로 설정 (로그인 버튼 숨김)
-  authLoading.value = true
+  // authLoading은 이미 true로 초기화됨 (로그인 버튼 숨김)
   authModalVisible.value = hasAccessTokenInHash
 
   if (hasAccessTokenInHash) {
@@ -943,10 +942,15 @@ onMounted(async () => {
     }
   }
   
-  // 지도 초기화와 인증을 병렬로 실행 (지도는 인증과 무관하므로)
-  const initPromise = initialize()
+  // 지도 초기화와 인증을 병렬로 실행 (초기 렌더링 블로킹 없음)
+  // 각 작업은 개별적으로 완료되면 UI 업데이트
+  initialize().catch(err => {
+    console.error('Map initialization failed:', err)
+    setGlobalMessage('지도 로딩에 실패했습니다.')
+  })
   
-  const authPromise = (async () => {
+  // 인증 확인 (비동기로 실행, 초기 렌더링 차단 없음)
+  ;(async () => {
     try {
       if (!accessToken.value || isJwtExpiredOrNearExpiry(accessToken.value)) {
         // Try to restore session using refresh_token cookie.
@@ -977,9 +981,6 @@ onMounted(async () => {
       authModalVisible.value = false
     }
   })()
-  
-  // 두 작업이 모두 완료될 때까지 대기
-  await Promise.all([initPromise, authPromise])
 })
 </script>
 
