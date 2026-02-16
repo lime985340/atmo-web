@@ -32,7 +32,11 @@ const onLogout = () => {
       <span class="brand__tag">대기 + 날씨 통합 모니터링</span>
     </div>
     <div class="auth">
-      <div v-if="!props.authLoading && props.user" class="auth__user">
+      <div v-if="props.authLoading" class="auth__loading">
+        <span class="auth__loading-spinner" aria-hidden="true"></span>
+        <span class="auth__loading-text">로그인 정보 확인 중...</span>
+      </div>
+      <div v-else-if="props.user" class="auth__user">
         <span
           class="auth__avatar"
           :class="`auth__avatar--${props.user.provider || 'social'}`"
@@ -41,7 +45,7 @@ const onLogout = () => {
         <span class="auth__name">{{ props.user.displayNameUi || props.user.displayName || props.user.name || props.user.email || '사용자' }}</span>
         <button class="ghost" @click="onLogout">로그아웃</button>
       </div>
-      <div v-else-if="!props.authLoading" class="auth__buttons">
+      <div v-else class="auth__buttons">
         <button
           v-for="p in props.providers"
           :key="p.key"
