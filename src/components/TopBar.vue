@@ -7,6 +7,10 @@ const props = defineProps({
   providers: {
     type: Array,
     default: () => []
+  },
+  authLoading: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -28,13 +32,33 @@ const onLogout = () => {
       <span class="brand__tag">대기 + 날씨 통합 모니터링</span>
     </div>
     <div class="auth">
-      <div v-if="props.user" class="auth__user">
-        <span>{{ props.user.name || props.user.email || props.user.id }}</span>
+      <div v-if="props.authLoading" class="auth__loading">
+        <span class="auth__loading-spinner" aria-hidden="true"></span>
+        <span class="auth__loading-text">로그인 정보 확인 중...</span>
+      </div>
+      <div v-else-if="props.user" class="auth__user">
+        <span
+          class="auth__avatar"
+          :class="`auth__avatar--${props.user.provider || 'social'}`"
+          aria-hidden="true"
+        ></span>
+        <span class="auth__name">{{ props.user.displayNameUi || props.user.displayName || props.user.name || props.user.email || '사용자' }}</span>
         <button class="ghost" @click="onLogout">로그아웃</button>
       </div>
       <div v-else class="auth__buttons">
-        <button v-for="p in props.providers" :key="p.key" class="pill" @click="onLogin(p.key)">
-          {{ p.label }} 로그인
+        <button
+          v-for="p in props.providers"
+          :key="p.key"
+          class="pill auth__button"
+          :class="`auth__button--${p.theme || p.key}`"
+          @click="onLogin(p.key)"
+        >
+          <span
+            class="auth__logo"
+            :class="`auth__logo--${p.theme || p.key}`"
+            aria-hidden="true"
+          ></span>
+          <span>{{ p.label }} 로그인</span>
         </button>
       </div>
     </div>
