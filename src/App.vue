@@ -20,7 +20,7 @@ const lastPolygonKey = ref('')
 
 const loading = ref(false)
 const user = ref(null)
-const authLoading = ref(true)  // 초기 로딩 시 항상 true로 설정
+const authLoading = ref(true)
 const authModalVisible = ref(false)
 const accessToken = ref(localStorage.getItem('accessToken') || '')
 const deletingFavoriteIds = ref([])
@@ -337,7 +337,6 @@ const submitFavoriteAdd = async () => {
 }
 
 const login = async (provider) => {
-  authModalVisible.value = true
   try {
     const returnTo = `${window.location.origin}${window.location.pathname}`
     const data = await apiFetch(`/auth/oauth/${provider}/authorize-url?returnTo=${encodeURIComponent(returnTo)}`)
@@ -345,7 +344,6 @@ const login = async (provider) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : '로그인 요청에 실패했습니다.'
     setGlobalMessage(message)
-    authModalVisible.value = false
   }
 }
 
@@ -928,6 +926,7 @@ onMounted(async () => {
   const hasAccessTokenInHash = window.location.hash.includes('access_token=')
 
   if (hasAccessTokenInHash) {
+    authModalVisible.value = true
     const hash = new URLSearchParams(window.location.hash.replace('#', ''))
     const token = hash.get('access_token')
     if (token) {
