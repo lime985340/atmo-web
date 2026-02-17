@@ -4,6 +4,8 @@ import TopBar from './components/TopBar.vue'
 import StationDetail from './components/StationDetail.vue'
 import FavoritesList from './components/FavoritesList.vue'
 import DashboardPanel from './components/DashboardPanel.vue'
+import AuthModal from './components/AuthModal.vue'
+import { providerDisplayMap } from './auth/providers'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 const KAKAO_KEY = import.meta.env.VITE_KAKAO_APP_KEY || ''
@@ -20,8 +22,10 @@ const lastPolygonKey = ref('')
 
 const loading = ref(false)
 const user = ref(null)
-const authLoading = ref(true)  // 초기 로딩 시 항상 true로 설정
+const authLoading = ref(true)
 const authModalVisible = ref(false)
+const authModalTitle = ref('')
+const authModalDesc = ref('')
 const accessToken = ref(localStorage.getItem('accessToken') || '')
 const deletingFavoriteIds = ref([])
 const stationDetailLoading = ref(false)
@@ -89,11 +93,42 @@ const authHeader = computed(() =>
   accessToken.value ? { Authorization: `Bearer ${accessToken.value}` } : {}
 )
 
-const providerDisplayMap = {
-  kakao: '카카오',
-  google: '구글',
-  naver: '네이버'
+const openAuthRedirectModal = (provider) => {
+  const key = String(provider || '').toLowerCase()
+  const label = providerDisplayMap[key] || '소셜'
+  authModalTitle.value = `${label} 로그인을 진행합니다`
+  authModalDesc.value = ''
+  authModalVisible.value = true
 }
+
+const openAuthCheckingModal = () => {
+  authModalVisible.value = true
+  authModalTitle.value = '로그인 확인 중입니다'
+  authModalDesc.value = '계정 상태를 안전하게 확인하고 있어요.'
+}
+
+const closeAuthModal = () => {
+  authModalVisible.value = false
+  authModalTitle.value = ''
+  authModalDesc.value = ''
+}
+
+const onPageShow = (event) => {
+  if (event.persisted) {
+    closeAuthModal()
+  }
+}
+
+const onPageHide = () => {
+  closeAuthModal()
+}
+
+window.addEventListener('pageshow', onPageShow)
+window.addEventListener('pagehide', onPageHide)
+onUnmounted(() => {
+  window.removeEventListener('pageshow', onPageShow)
+  window.removeEventListener('pagehide', onPageHide)
+})
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -337,17 +372,17 @@ const submitFavoriteAdd = async () => {
 }
 
 const login = async (provider) => {
-  authLoading.value = true
-  authModalVisible.value = true
   try {
+    openAuthRedirectModal(provider)
+    await nextTick()
+    await new Promise((resolve) => requestAnimationFrame(() => resolve()))
     const returnTo = `${window.location.origin}${window.location.pathname}`
     const data = await apiFetch(`/auth/oauth/${provider}/authorize-url?returnTo=${encodeURIComponent(returnTo)}`)
     window.location.href = data.authorizeUrl
   } catch (err) {
+    closeAuthModal()
     const message = err instanceof Error ? err.message : '로그인 요청에 실패했습니다.'
     setGlobalMessage(message)
-    authLoading.value = false
-    authModalVisible.value = false
   }
 }
 
@@ -926,11 +961,7 @@ const formatPrecipType = (value) => {
 }
 
 onMounted(async () => {
-  const hasAccessTokenFromStorage = Boolean(accessToken.value)
   const hasAccessTokenInHash = window.location.hash.includes('access_token=')
-  
-  // authLoading은 이미 true로 초기화됨 (로그인 버튼 숨김)
-  authModalVisible.value = hasAccessTokenInHash
 
   if (hasAccessTokenInHash) {
     const hash = new URLSearchParams(window.location.hash.replace('#', ''))
@@ -939,6 +970,7 @@ onMounted(async () => {
       accessToken.value = token
       localStorage.setItem('accessToken', token)
       window.history.replaceState({}, document.title, window.location.pathname)
+      openAuthCheckingModal()
     }
   }
   
@@ -953,9 +985,6 @@ onMounted(async () => {
   ;(async () => {
     try {
       if (!accessToken.value || isJwtExpiredOrNearExpiry(accessToken.value)) {
-        // Try to restore session using refresh_token cookie.
-        // Also refresh proactively if stored access token is expired/near-expiry
-        // to avoid a burst of initial 401s during bootstrap.
         await refreshAccessToken()
       }
 
@@ -978,7 +1007,7 @@ onMounted(async () => {
       setGlobalMessage(message)
     } finally {
       authLoading.value = false
-      authModalVisible.value = false
+      closeAuthModal()
     }
   })()
 })
@@ -1066,14 +1095,10 @@ onMounted(async () => {
       <div class="global-toast" v-if="globalMessage">{{ globalMessage }}</div>
     </main>
 
-    <div v-if="authLoading" class="auth-modal" role="dialog" aria-modal="true" aria-live="polite">
-      <div class="auth-modal__backdrop"></div>
-      <div class="auth-modal__panel">
-        <span class="auth-modal__spinner" aria-hidden="true"></span>
-        <p class="auth-modal__title">로그인 확인 중입니다</p>
-        <p class="auth-modal__desc">계정 상태를 안전하게 확인하고 있어요.</p>
-        <p class="auth-modal__wait">잠시만 기다려 주세요<span class="auth-modal__dots" aria-hidden="true"></span></p>
-      </div>
-    </div>
+    <AuthModal
+      :visible="authModalVisible"
+      :title="authModalTitle"
+      :desc="authModalDesc"
+    />
   </div>
 </template>
