@@ -113,6 +113,23 @@ const closeAuthModal = () => {
   authModalDesc.value = ''
 }
 
+const onPageShow = (event) => {
+  if (event.persisted) {
+    closeAuthModal()
+  }
+}
+
+const onPageHide = () => {
+  closeAuthModal()
+}
+
+window.addEventListener('pageshow', onPageShow)
+window.addEventListener('pagehide', onPageHide)
+onUnmounted(() => {
+  window.removeEventListener('pageshow', onPageShow)
+  window.removeEventListener('pagehide', onPageHide)
+})
+
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 const genericNameTokens = ['계정', '연동', 'google', 'kakao', 'naver', '구글', '카카오', '네이버']
