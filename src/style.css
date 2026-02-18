@@ -946,7 +946,7 @@ body {
 
 .forecast__row {
   display: grid;
-  grid-template-columns: 74px 74px repeat(5, minmax(90px, 1fr));
+  grid-template-columns: repeat(7, minmax(74px, max-content));
   gap: 0;
   font-size: 0.85rem;
   align-items: stretch;
