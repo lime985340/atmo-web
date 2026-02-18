@@ -944,21 +944,24 @@ body {
   font-size: 0.76rem;
 }
 
+.forecast__table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+}
+
 .forecast__row {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(74px, max-content));
-  gap: 0;
+  display: table-row;
   font-size: 0.85rem;
-  align-items: stretch;
-  min-width: 820px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .forecast__row > span {
+  display: table-cell;
+  min-width: 74px;
   min-height: 40px;
-  display: inline-flex;
-  align-items: center;
   padding: 0 10px;
+  vertical-align: middle;
   border-right: 1px solid rgba(15, 23, 42, 0.06);
 }
 
