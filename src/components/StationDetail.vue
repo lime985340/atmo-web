@@ -232,24 +232,26 @@ const formatDataTime = (value) => {
           <div class="forecast__header">
             <h3>예보</h3>
           </div>
-          <div class="forecast__table" v-if="props.forecastHours.length">
-            <div class="forecast__row forecast__row--head" aria-hidden="true">
-              <span class="forecast__meta">시간</span>
-              <span class="forecast__meta">기온</span>
-              <span class="forecast__meta">습도</span>
-              <span class="forecast__meta">풍속</span>
-              <span class="forecast__meta">강수형태</span>
-              <span class="forecast__meta">강수량</span>
-              <span class="forecast__meta">강수확률</span>
-            </div>
-            <div class="forecast__row" v-for="hour in props.forecastHours" :key="hour.forecastAt">
-              <span class="forecast__time">{{ props.formatForecastTime(hour.forecastAt) }}</span>
-              <span class="forecast__temp">{{ props.formatTemperature(hour.tempC) }}°C</span>
-              <span class="forecast__meta">{{ hour.humidity ?? '-' }}%</span>
-              <span class="forecast__meta">{{ props.formatWindSpeed(hour.windSpeed) }}m/s</span>
-              <span class="forecast__meta">{{ props.formatPrecipType(hour.precipType) }}</span>
-              <span class="forecast__meta">{{ hour.precipMm ?? '-' }}mm</span>
-              <span class="forecast__meta">{{ hour.pop ?? '-' }}%</span>
+          <div class="forecast__table-wrapper" v-if="props.forecastHours.length">
+            <div class="forecast__table">
+              <div class="forecast__row forecast__row--head" aria-hidden="true">
+                <span class="forecast__meta">시간</span>
+                <span class="forecast__meta">기온</span>
+                <span class="forecast__meta">습도</span>
+                <span class="forecast__meta">풍속</span>
+                <span class="forecast__meta">강수형태</span>
+                <span class="forecast__meta">강수량</span>
+                <span class="forecast__meta">강수확률</span>
+              </div>
+              <div class="forecast__row" v-for="hour in props.forecastHours" :key="hour.forecastAt">
+                <span class="forecast__time">{{ props.formatForecastTime(hour.forecastAt) }}</span>
+                <span class="forecast__temp">{{ props.formatTemperature(hour.tempC) }}°C</span>
+                <span class="forecast__meta">{{ hour.humidity ?? '-' }}%</span>
+                <span class="forecast__meta">{{ props.formatWindSpeed(hour.windSpeed) }}m/s</span>
+                <span class="forecast__meta">{{ props.formatPrecipType(hour.precipType) }}</span>
+                <span class="forecast__meta">{{ hour.precipMm ?? '-' }}mm</span>
+                <span class="forecast__meta">{{ hour.pop ?? '-' }}%</span>
+              </div>
             </div>
           </div>
           <p class="forecast__empty" v-else>예보 데이터가 없습니다.</p>
