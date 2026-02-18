@@ -944,21 +944,32 @@ body {
   font-size: 0.76rem;
 }
 
+.forecast__table-wrapper {
+  max-width: 820px;
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.forecast__table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 518px; /* 74px * 7 = 최소 너비 */
+}
+
 .forecast__row {
-  display: grid;
-  grid-template-columns: 74px 74px repeat(5, minmax(90px, 1fr));
-  gap: 0;
+  display: table-row;
   font-size: 0.85rem;
-  align-items: stretch;
-  min-width: 820px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .forecast__row > span {
+  display: table-cell;
+  min-width: 74px;
   min-height: 40px;
-  display: inline-flex;
-  align-items: center;
   padding: 0 10px;
+  vertical-align: middle;
   border-right: 1px solid rgba(15, 23, 42, 0.06);
 }
 
