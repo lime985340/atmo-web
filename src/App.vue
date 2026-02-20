@@ -595,6 +595,9 @@ const removeFavorite = async (favoriteId) => {
 const favoriteLocationMarker = ref(null)
 
 const selectFavorite = async (favorite) => {
+  // 기존에 진행 중인 측정소 상세 요청 무효화
+  stationDetailRequestSeq.value += 1
+
   const stationFromCard = cardToStationDetail(favorite)
   if (stationFromCard) {
     selectedStation.value = stationFromCard
@@ -616,27 +619,10 @@ const selectFavorite = async (favorite) => {
     setFavoritesMessage('해당 즐겨찾기의 위치 정보를 찾지 못했습니다.')
     return
   }
-  
-  // 가장 가까운 측정소 찾기
-  let nearestStationId = null
-  let nearestDistance = Number.POSITIVE_INFINITY
-  if (Array.isArray(stations.value)) {
-    stations.value.forEach((station) => {
-      const stationId = Number(station?.id)
-      const stationLat = Number(station?.lat)
-      const stationLng = Number(station?.lng)
-      if (!Number.isFinite(stationId) || stationId <= 0) return
-      if (!Number.isFinite(stationLat) || !Number.isFinite(stationLng)) return
-      const distance = (stationLat - lat) ** 2 + (stationLng - lng) ** 2
-      if (distance < nearestDistance) {
-        nearestDistance = distance
-        nearestStationId = stationId
-      }
-    })
-  }
-  
-  if (nearestStationId) {
-    await loadStationDetail(nearestStationId)
+
+  const stationId = Number(favorite?.stationId)
+  if (Number.isFinite(stationId) && stationId > 0) {
+    await loadStationDetail(stationId)
   }
   
   if (map.value) {
