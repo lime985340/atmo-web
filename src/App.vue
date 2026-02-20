@@ -30,6 +30,7 @@ const accessToken = ref(localStorage.getItem('accessToken') || '')
 const deletingFavoriteIds = ref([])
 const stationDetailLoading = ref(false)
 const stationDetailRequestSeq = ref(0)
+const favoriteSelectSeq = ref(0)
 
 const stations = ref([])
 const stationsRequestSeq = ref(0)
@@ -595,6 +596,9 @@ const removeFavorite = async (favoriteId) => {
 const favoriteLocationMarker = ref(null)
 
 const selectFavorite = async (favorite) => {
+  const selectSeq = favoriteSelectSeq.value + 1
+  favoriteSelectSeq.value = selectSeq
+
   // 기존에 진행 중인 측정소 상세 요청 무효화
   stationDetailRequestSeq.value += 1
 
@@ -624,7 +628,11 @@ const selectFavorite = async (favorite) => {
   if (Number.isFinite(stationId) && stationId > 0) {
     await loadStationDetail(stationId)
   }
-  
+
+  if (selectSeq !== favoriteSelectSeq.value) {
+    return
+  }
+
   if (map.value) {
     map.value.setCenter(new window.kakao.maps.LatLng(lat, lng))
     // 즐겨찾기 위치 마커 표시
