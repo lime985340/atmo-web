@@ -29,6 +29,7 @@ const authModalDesc = ref('')
 const accessToken = ref(localStorage.getItem('accessToken') || '')
 const deletingFavoriteIds = ref([])
 const stationDetailLoading = ref(false)
+const stationDetailRequestSeq = ref(0)
 
 const stations = ref([])
 const stationsRequestSeq = ref(0)
@@ -537,6 +538,28 @@ const applyForecastRange = (hours) => {
   forecastHours.value = trimForecastByRange(allForecastHours.value, hours)
 }
 
+const cardToStationDetail = (card) => {
+  if (!card || typeof card !== 'object') return null
+  return {
+    id: Number(card.id) || null,
+    name: card.description || '즐겨찾기',
+    addr: card.address || '',
+    air: {
+      pm10: card.pm10 ?? null,
+      pm25: card.pm25 ?? null,
+      grade: card.grade ?? null,
+      dataTime: card.airDataTime ?? null
+    },
+    weather: {
+      obsTime: card.weatherObsTime ?? null,
+      temp: card.tempC ?? null,
+      humidity: card.humidity ?? null,
+      windSpeed: card.windSpeed ?? null,
+      precip: card.precipMm ?? null
+    }
+  }
+}
+
 const formatTemperature = (value) => {
   if (value === null || value === undefined || value === '') return '-'
   const num = Number(value)
@@ -572,6 +595,13 @@ const removeFavorite = async (favoriteId) => {
 const favoriteLocationMarker = ref(null)
 
 const selectFavorite = async (favorite) => {
+  const stationFromCard = cardToStationDetail(favorite)
+  if (stationFromCard) {
+    selectedStation.value = stationFromCard
+    allForecastHours.value = Array.isArray(favorite?.forecastHours) ? favorite.forecastHours : []
+    applyForecastRange(forecastRange.value)
+  }
+
   // 즐겨찾기 위치 정보 저장 (환경 상세에 표시용)
   selectedFavoriteLocation.value = {
     description: favorite?.description,
@@ -680,12 +710,16 @@ const loadStationDetail = async (stationId) => {
     return
   }
   
+  const requestSeq = stationDetailRequestSeq.value + 1
+  stationDetailRequestSeq.value = requestSeq
+
   // 이전 선택된 측정소는 유지하되 로딩 상태 표시 (또는 null로 설정)
   stationDetailLoading.value = true
   
   try {
     // 측정소 상세 정보 로드
     const stationData = await apiFetch(`/stations/${resolvedId}`)
+    if (requestSeq !== stationDetailRequestSeq.value) return
     selectedStation.value = stationData
     
     // 디버깅: 측정소 상세 데이터 로깅
@@ -693,15 +727,19 @@ const loadStationDetail = async (stationId) => {
     
     // 예보 데이터 로드
     const forecastData = await apiFetch(`/stations/${resolvedId}/forecast?hours=${FORECAST_API_HORIZON_HOURS}`)
+    if (requestSeq !== stationDetailRequestSeq.value) return
     allForecastHours.value = Array.isArray(forecastData) ? forecastData : []
     applyForecastRange(forecastRange.value)
   } catch (err) {
+    if (requestSeq !== stationDetailRequestSeq.value) return
     const message = err instanceof Error ? err.message : '환경 상세를 불러오지 못했습니다.'
     setGlobalMessage(message)
     // 에러 발생 시 selectedStation을 null로 설정하여 에러 상태 표시
     selectedStation.value = null
   } finally {
-    stationDetailLoading.value = false
+    if (requestSeq === stationDetailRequestSeq.value) {
+      stationDetailLoading.value = false
+    }
   }
 }
 
