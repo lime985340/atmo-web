@@ -299,6 +299,53 @@ body {
   animation: auth-dots 1.1s steps(1, end) infinite;
 }
 
+.api-logout-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 121;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.api-logout-dialog__panel {
+  pointer-events: all;
+  width: min(92vw, 380px);
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  box-shadow: 0 20px 48px rgba(2, 10, 20, 0.28);
+  padding: 20px 18px 16px;
+  text-align: center;
+  animation: auth-modal-pop 180ms ease-out;
+}
+
+.api-logout-dialog__title {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.api-logout-dialog__desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.api-logout-dialog__confirm {
+  margin-top: 14px;
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: linear-gradient(120deg, var(--accent), #1aa89f);
+  color: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .auth__buttons {
   display: flex;
   gap: 10px;

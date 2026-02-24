@@ -5,6 +5,7 @@ import StationDetail from './components/StationDetail.vue'
 import FavoritesList from './components/FavoritesList.vue'
 import DashboardPanel from './components/DashboardPanel.vue'
 import AuthModal from './components/AuthModal.vue'
+import ApiLogoutDialog from './components/ApiLogoutDialog.vue'
 import { providerDisplayMap } from './auth/providers'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
@@ -26,6 +27,7 @@ const authLoading = ref(true)
 const authModalVisible = ref(false)
 const authModalTitle = ref('')
 const authModalDesc = ref('')
+const apiLogoutDialogVisible = ref(false)
 const accessToken = ref(localStorage.getItem('accessToken') || '')
 const deletingFavoriteIds = ref([])
 const stationDetailLoading = ref(false)
@@ -113,6 +115,24 @@ const closeAuthModal = () => {
   authModalVisible.value = false
   authModalTitle.value = ''
   authModalDesc.value = ''
+}
+
+const clearAuthSession = () => {
+  accessToken.value = ''
+  localStorage.removeItem('accessToken')
+  user.value = null
+  favorites.value = []
+  favoriteCards.value = []
+}
+
+const openApiLogoutDialog = () => {
+  if (authLoading.value) return
+  if (apiLogoutDialogVisible.value) return
+  apiLogoutDialogVisible.value = true
+}
+
+const closeApiLogoutDialog = () => {
+  apiLogoutDialogVisible.value = false
 }
 
 const onPageShow = (event) => {
@@ -218,6 +238,12 @@ const apiFetch = async (path, options = {}, allowRetry = true) => {
     if (newToken) {
       return apiFetch(path, options, false)
     }
+  }
+
+  if (res.status === 401) {
+    clearAuthSession()
+    openApiLogoutDialog()
+    throw new Error('로그인 상태가 만료되었습니다. 다시 로그인해 주세요.')
   }
   
   if (!res.ok) {
@@ -396,11 +422,7 @@ const logout = async () => {
       body: JSON.stringify({})
     })
   } finally {
-    accessToken.value = ''
-    localStorage.removeItem('accessToken')
-    user.value = null
-    favorites.value = []
-    favoriteCards.value = []
+    clearAuthSession()
   }
 }
 
@@ -427,8 +449,7 @@ const refreshAccessToken = async () => {
         }
       }
     } catch (err) {
-      accessToken.value = ''
-      localStorage.removeItem('accessToken')
+      clearAuthSession()
     }
   })()
 
@@ -1149,6 +1170,13 @@ onMounted(async () => {
       :visible="authModalVisible"
       :title="authModalTitle"
       :desc="authModalDesc"
+    />
+    <ApiLogoutDialog
+      :visible="apiLogoutDialogVisible"
+      title="로그인이 해제되었습니다"
+      desc="요청 처리 중 로그아웃 상태가 확인되었습니다. 다시 로그인해 주세요."
+      confirm-label="확인"
+      @confirm="closeApiLogoutDialog"
     />
   </div>
 </template>
