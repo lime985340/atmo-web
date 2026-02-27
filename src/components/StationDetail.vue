@@ -1,5 +1,15 @@
 <script setup>
 import { computed } from 'vue'
+import {
+  getAirQualityBadgeClass,
+  getAirQualityLabel,
+  getPm10Label,
+  getPm10MetricClass,
+  getPm25Label,
+  getPm25MetricClass,
+  resolveAirQualityGrade
+} from '../utils/airQuality'
+import { formatDataTime } from '../utils/formatters'
 
 const props = defineProps({
   selectedStation: {
@@ -50,68 +60,21 @@ const props = defineProps({
 
 const emit = defineEmits(['set-forecast-range'])
 
-const gradeFromPm = (pm25, pm10) => {
-  const p25 = Number(pm25)
-  const p10 = Number(pm10)
-  const g25 = Number.isFinite(p25)
-    ? (p25 <= 15 ? 1 : p25 <= 35 ? 2 : p25 <= 75 ? 3 : 4)
-    : null
-  const g10 = Number.isFinite(p10)
-    ? (p10 <= 30 ? 1 : p10 <= 80 ? 2 : p10 <= 150 ? 3 : 4)
-    : null
-  if (g25 === null && g10 === null) return null
-  if (g25 === null) return g10
-  if (g10 === null) return g25
-  return Math.max(g25, g10)
-}
-
 const pmGrade = computed(() => {
-  const raw = Number(props.selectedStation?.air?.grade)
-  if (Number.isFinite(raw) && raw >= 1) return raw
-  return gradeFromPm(props.selectedStation?.air?.pm25, props.selectedStation?.air?.pm10)
+  return resolveAirQualityGrade({
+    explicitGrade: props.selectedStation?.air?.grade,
+    pm10: props.selectedStation?.air?.pm10,
+    pm25: props.selectedStation?.air?.pm25
+  })
 })
 
 const pmGradeLabel = computed(() => {
-  if (pmGrade.value === 1) return '좋음'
-  if (pmGrade.value === 2) return '보통'
-  if (pmGrade.value === 3) return '나쁨'
-  if (pmGrade.value === 4) return '매우나쁨'
-  return '미측정'
+  return getAirQualityLabel(pmGrade.value)
 })
 
 const pmGradeClass = computed(() => {
-  if (pmGrade.value === 1) return 'badge badge--good'
-  if (pmGrade.value === 2) return 'badge badge--ok'
-  if (pmGrade.value === 3) return 'badge badge--bad'
-  if (pmGrade.value === 4) return 'badge badge--verybad'
-  return 'badge badge--unknown'
+  return getAirQualityBadgeClass(pmGrade.value)
 })
-
-const pmMetricClass = computed(() => {
-  if (pmGrade.value === 1) return 'metric metric--good'
-  if (pmGrade.value === 2) return 'metric metric--ok'
-  if (pmGrade.value === 3) return 'metric metric--bad'
-  if (pmGrade.value === 4) return 'metric metric--verybad'
-  return 'metric'
-})
-
-const metricClassFromPm10 = (value) => {
-  const num = Number(value)
-  if (!Number.isFinite(num)) return 'metric'
-  if (num <= 30) return 'metric metric--good'
-  if (num <= 80) return 'metric metric--ok'
-  if (num <= 150) return 'metric metric--bad'
-  return 'metric metric--verybad'
-}
-
-const metricClassFromPm25 = (value) => {
-  const num = Number(value)
-  if (!Number.isFinite(num)) return 'metric'
-  if (num <= 15) return 'metric metric--good'
-  if (num <= 35) return 'metric metric--ok'
-  if (num <= 75) return 'metric metric--bad'
-  return 'metric metric--verybad'
-}
 
 const resolveSkyIcon = (skyRaw) => {
   const value = Number(skyRaw)
@@ -143,37 +106,6 @@ const weatherIcon = computed(() => {
 
 const onSetForecastRange = (hours) => {
   emit('set-forecast-range', hours)
-}
-
-const getPm10Label = (value) => {
-  const num = Number(value)
-  if (!Number.isFinite(num)) return '-'
-  if (num <= 30) return '좋음'
-  if (num <= 80) return '보통'
-  if (num <= 150) return '나쁨'
-  return '매우나쁨'
-}
-
-const getPm25Label = (value) => {
-  const num = Number(value)
-  if (!Number.isFinite(num)) return '-'
-  if (num <= 15) return '좋음'
-  if (num <= 35) return '보통'
-  if (num <= 75) return '나쁨'
-  return '매우나쁨'
-}
-
-// 데이터 시간 포맷팅
-const formatDataTime = (value) => {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString('ko-KR', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
 }
 </script>
 
@@ -213,11 +145,11 @@ const formatDataTime = (value) => {
         <div class="grid">
           <div>
             <span class="label">미세먼지 (PM10)</span>
-            <strong :class="metricClassFromPm10(props.selectedStation.air?.pm10)">{{ props.selectedStation.air?.pm10 ?? '-' }} <span class="grade-label">({{ getPm10Label(props.selectedStation.air?.pm10) }})</span></strong>
+            <strong :class="getPm10MetricClass(props.selectedStation.air?.pm10)">{{ props.selectedStation.air?.pm10 ?? '-' }} <span class="grade-label">({{ getPm10Label(props.selectedStation.air?.pm10) }})</span></strong>
           </div>
           <div>
             <span class="label">초미세먼지 (PM2.5)</span>
-            <strong :class="metricClassFromPm25(props.selectedStation.air?.pm25)">{{ props.selectedStation.air?.pm25 ?? '-' }} <span class="grade-label">({{ getPm25Label(props.selectedStation.air?.pm25) }})</span></strong>
+            <strong :class="getPm25MetricClass(props.selectedStation.air?.pm25)">{{ props.selectedStation.air?.pm25 ?? '-' }} <span class="grade-label">({{ getPm25Label(props.selectedStation.air?.pm25) }})</span></strong>
           </div>
           <div>
             <span class="label">온도</span>
