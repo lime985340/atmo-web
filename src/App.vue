@@ -1,12 +1,20 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import TopBar from './components/TopBar.vue'
 import StationDetail from './components/StationDetail.vue'
 import FavoritesList from './components/FavoritesList.vue'
-import DashboardPanel from './components/DashboardPanel.vue'
+import FavoriteAddPanel from './components/FavoriteAddPanel.vue'
 import AuthModal from './components/AuthModal.vue'
 import ApiLogoutDialog from './components/ApiLogoutDialog.vue'
 import { providerDisplayMap } from './auth/providers'
+import {
+  formatForecastTime,
+  formatPrecipType,
+  formatTemperature,
+  formatWindSpeed
+} from './utils/formatters'
+import { runAuthBootstrap } from './composables/useAuthBootstrap'
+import { createFavoriteAddActions, createFavoriteAddState } from './composables/useFavoriteAdd'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 const KAKAO_KEY = import.meta.env.VITE_KAKAO_APP_KEY || ''
@@ -23,11 +31,13 @@ const lastPolygonKey = ref('')
 
 const loading = ref(false)
 const user = ref(null)
-const authLoading = ref(true)
-const authModalVisible = ref(false)
-const authModalTitle = ref('')
-const authModalDesc = ref('')
-const apiLogoutDialogVisible = ref(false)
+const authState = reactive({
+  loading: true,
+  modalVisible: false,
+  modalTitle: '',
+  modalDesc: '',
+  apiLogoutDialogVisible: false
+})
 const accessToken = ref(localStorage.getItem('accessToken') || '')
 const deletingFavoriteIds = ref([])
 const stationDetailLoading = ref(false)
@@ -44,7 +54,6 @@ const forecastRange = ref(FORECAST_API_HORIZON_HOURS)
 const favoriteForecastRange = 6
 const favorites = ref([])
 const favoriteCards = ref([])
-const statusMessage = ref('')
 const favoritesMessage = ref('')
 const globalMessage = ref('')
 const favoritesRequestSeq = ref(0)
@@ -58,12 +67,6 @@ const favoriteCardsById = computed(() => {
   })
   return map
 })
-
-const favoriteAddOpen = ref(false)
-const favoriteAddBusy = ref(false)
-const favoriteAddAddress = ref('')
-const favoriteAddName = ref('')
-const favoriteAddCoords = ref(null)
 
 const isAuthenticated = computed(() => Boolean(accessToken.value))
 
@@ -93,28 +96,24 @@ const providers = [
   { key: 'naver', label: '네이버', theme: 'naver' }
 ]
 
-const authHeader = computed(() =>
-  accessToken.value ? { Authorization: `Bearer ${accessToken.value}` } : {}
-)
-
 const openAuthRedirectModal = (provider) => {
   const key = String(provider || '').toLowerCase()
   const label = providerDisplayMap[key] || '소셜'
-  authModalTitle.value = `${label} 로그인을 진행합니다`
-  authModalDesc.value = ''
-  authModalVisible.value = true
+  authState.modalTitle = `${label} 로그인을 진행합니다`
+  authState.modalDesc = ''
+  authState.modalVisible = true
 }
 
 const openAuthCheckingModal = () => {
-  authModalVisible.value = true
-  authModalTitle.value = '로그인 확인 중입니다'
-  authModalDesc.value = '계정 상태를 안전하게 확인하고 있어요.'
+  authState.modalVisible = true
+  authState.modalTitle = '로그인 확인 중입니다'
+  authState.modalDesc = '계정 상태를 안전하게 확인하고 있어요.'
 }
 
 const closeAuthModal = () => {
-  authModalVisible.value = false
-  authModalTitle.value = ''
-  authModalDesc.value = ''
+  authState.modalVisible = false
+  authState.modalTitle = ''
+  authState.modalDesc = ''
 }
 
 const clearAuthSession = () => {
@@ -126,13 +125,13 @@ const clearAuthSession = () => {
 }
 
 const openApiLogoutDialog = () => {
-  if (authLoading.value) return
-  if (apiLogoutDialogVisible.value) return
-  apiLogoutDialogVisible.value = true
+  if (authState.loading) return
+  if (authState.apiLogoutDialogVisible) return
+  authState.apiLogoutDialogVisible = true
 }
 
 const closeApiLogoutDialog = () => {
-  apiLogoutDialogVisible.value = false
+  authState.apiLogoutDialogVisible = false
 }
 
 const onPageShow = (event) => {
@@ -342,64 +341,6 @@ const geocodeAddress = async (address) => {
   })
 }
 
-const openFavoriteAdd = async () => {
-  if (!isAuthenticated.value) {
-    setFavoritesMessage('로그인 후 이용 가능한 서비스입니다.')
-    return
-  }
-  try {
-    const picked = await pickPostcodeAddress()
-    const coords = await geocodeAddress(picked.address)
-    favoriteAddAddress.value = picked.address
-    favoriteAddName.value = (picked.buildingName || picked.bname || picked.address).trim()
-    favoriteAddCoords.value = coords
-    favoriteAddOpen.value = true
-  } catch (err) {
-    const message = err instanceof Error ? err.message : '주소 검색을 완료하지 못했습니다.'
-    setFavoritesMessage(message)
-  }
-}
-
-const closeFavoriteAdd = () => {
-  favoriteAddOpen.value = false
-  favoriteAddBusy.value = false
-  favoriteAddAddress.value = ''
-  favoriteAddName.value = ''
-  favoriteAddCoords.value = null
-}
-
-const submitFavoriteAdd = async () => {
-  if (favoriteAddBusy.value) return
-  if (!favoriteAddCoords.value) {
-    setFavoritesMessage('주소 좌표를 확인할 수 없습니다.')
-    return
-  }
-  const description = String(favoriteAddName.value || '').trim() || favoriteAddAddress.value
-  if (!description) {
-    setFavoritesMessage('즐겨찾기 이름을 입력해 주세요.')
-    return
-  }
-  favoriteAddBusy.value = true
-  try {
-    await apiFetch('/favorites', {
-      method: 'POST',
-      body: JSON.stringify({
-        description,
-        lat: favoriteAddCoords.value.lat,
-        lng: favoriteAddCoords.value.lng,
-        address: favoriteAddAddress.value
-      })
-    })
-    closeFavoriteAdd()
-    await loadFavorites()
-  } catch (err) {
-    const message = err instanceof Error ? err.message : '즐겨찾기 추가에 실패했습니다.'
-    setFavoritesMessage(message)
-  } finally {
-    favoriteAddBusy.value = false
-  }
-}
-
 const login = async (provider) => {
   try {
     openAuthRedirectModal(provider)
@@ -583,22 +524,6 @@ const cardToStationDetail = (card) => {
   }
 }
 
-const formatTemperature = (value) => {
-  if (value === null || value === undefined || value === '') return '-'
-  const num = Number(value)
-  if (!Number.isFinite(num)) return '-'
-  const rounded = Math.round(num * 10) / 10
-  if (Number.isInteger(rounded)) return String(rounded)
-  return rounded.toFixed(1)
-}
-
-const formatWindSpeed = (value) => {
-  if (value === null || value === undefined || value === '') return '-'
-  const num = Number(value)
-  if (!Number.isFinite(num)) return '-'
-  return (Math.round(num * 10) / 10).toFixed(1)
-}
-
 const removeFavorite = async (favoriteId) => {
   if (deletingFavoriteIds.value.includes(favoriteId)) return
   deletingFavoriteIds.value = [...deletingFavoriteIds.value, favoriteId]
@@ -776,15 +701,6 @@ const setForecastRange = (hours) => {
   applyForecastRange(hours)
 }
 
-const setStatus = (msg) => {
-  statusMessage.value = msg
-  if (msg) {
-    setTimeout(() => {
-      if (statusMessage.value === msg) statusMessage.value = ''
-    }, 4000)
-  }
-}
-
 const setFavoritesMessage = (msg) => {
   favoritesMessage.value = msg
   if (msg) {
@@ -802,6 +718,17 @@ const setGlobalMessage = (msg) => {
     }, 4000)
   }
 }
+
+const favoriteAddState = createFavoriteAddState()
+const { openFavoriteAdd, closeFavoriteAdd, submitFavoriteAdd } = createFavoriteAddActions({
+  state: favoriteAddState,
+  isAuthenticated,
+  pickPostcodeAddress,
+  geocodeAddress,
+  apiFetch,
+  loadFavorites,
+  setFavoritesMessage
+})
 
 const initKakao = () => new Promise((resolve, reject) => {
   if (window.kakao && window.kakao.maps) return resolve()
@@ -1013,80 +940,34 @@ onUnmounted(() => {
   mapRelayoutRaf = 0
 })
 
-const formatForecastTime = (value) => {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
-}
-
-const formatPrecipType = (value) => {
-  if (!value || value === 'NONE' || value === '0') return '없음'
-  const map = {
-    1: '비',
-    2: '비/눈',
-    3: '눈',
-    4: '소나기'
-  }
-  return map[value] || value
-}
-
 onMounted(async () => {
-  const hasAccessTokenInHash = window.location.hash.includes('access_token=')
-
-  if (hasAccessTokenInHash) {
-    const hash = new URLSearchParams(window.location.hash.replace('#', ''))
-    const token = hash.get('access_token')
-    if (token) {
-      accessToken.value = token
-      localStorage.setItem('accessToken', token)
-      window.history.replaceState({}, document.title, window.location.pathname)
-      openAuthCheckingModal()
-    }
-  }
-  
   // 지도 초기화와 인증을 병렬로 실행 (초기 렌더링 블로킹 없음)
   // 각 작업은 개별적으로 완료되면 UI 업데이트
   initialize().catch(err => {
     console.error('Map initialization failed:', err)
     setGlobalMessage('지도 로딩에 실패했습니다.')
   })
-  
-  // 인증 확인 (비동기로 실행, 초기 렌더링 차단 없음)
-  ;(async () => {
-    try {
-      if (!accessToken.value || isJwtExpiredOrNearExpiry(accessToken.value)) {
-        await refreshAccessToken()
-      }
 
-      if (accessToken.value) {
-        await loadMe()
-        if (!user.value) {
-          await refreshAccessToken()
-          if (accessToken.value) {
-            await loadMe()
-          }
-        }
-        if (user.value) {
-          await loadFavorites()
-        }
-      } else {
-        user.value = null
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '로그인 정보를 확인하는 중 오류가 발생했습니다.'
-      setGlobalMessage(message)
-    } finally {
-      authLoading.value = false
-      closeAuthModal()
-    }
-  })()
+  runAuthBootstrap({
+    accessToken,
+    user,
+    setAuthLoading: (next) => {
+      authState.loading = next
+    },
+    isJwtExpiredOrNearExpiry,
+    refreshAccessToken,
+    loadMe,
+    loadFavorites,
+    openAuthCheckingModal,
+    closeAuthModal,
+    setGlobalMessage
+  })
 })
 </script>
 
 <template>
   <div class="app">
-    <TopBar :user="user" :providers="providers" :auth-loading="authLoading" @login="login" @logout="logout" />
+    <TopBar :user="user" :providers="providers" :auth-loading="authState.loading" @login="login" @logout="logout" />
 
     <main class="layout layout--double">
       <section class="panel panel--sidebar">
@@ -1137,25 +1018,15 @@ onMounted(async () => {
           @add="openFavoriteAdd"
         />
 
-        <div class="panel__section" v-if="favoriteAddOpen">
-          <div class="card favorite-add">
-            <p class="card__title">즐겨찾기 추가</p>
-            <p class="card__meta">{{ favoriteAddAddress }}</p>
-            <label class="label" for="favoriteAddName">이름</label>
-            <input
-              id="favoriteAddName"
-              class="input"
-              v-model="favoriteAddName"
-              type="text"
-              autocomplete="off"
-              placeholder="예: 우리집, 회사"
-            />
-            <div class="favorite-add__actions">
-              <button class="ghost" type="button" @click="closeFavoriteAdd" :disabled="favoriteAddBusy">취소</button>
-              <button class="primary" type="button" @click="submitFavoriteAdd" :disabled="favoriteAddBusy">+ 추가</button>
-            </div>
-          </div>
-        </div>
+        <FavoriteAddPanel
+          v-if="favoriteAddState.open"
+          :address="favoriteAddState.address"
+          :name="favoriteAddState.name"
+          :busy="favoriteAddState.busy"
+          @update:name="favoriteAddState.name = $event"
+          @cancel="closeFavoriteAdd"
+          @submit="submitFavoriteAdd"
+        />
       </section>
 
       <section class="map">
@@ -1167,12 +1038,12 @@ onMounted(async () => {
     </main>
 
     <AuthModal
-      :visible="authModalVisible"
-      :title="authModalTitle"
-      :desc="authModalDesc"
+      :visible="authState.modalVisible"
+      :title="authState.modalTitle"
+      :desc="authState.modalDesc"
     />
     <ApiLogoutDialog
-      :visible="apiLogoutDialogVisible"
+      :visible="authState.apiLogoutDialogVisible"
       title="로그인이 해제되었습니다"
       desc="요청 처리 중 로그아웃 상태가 확인되었습니다. 다시 로그인해 주세요."
       confirm-label="확인"
