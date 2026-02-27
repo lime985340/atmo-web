@@ -10,17 +10,9 @@ import {
 import { formatDataTime, formatTemperature } from '../utils/formatters'
 
 const props = defineProps({
-  favorites: {
-    type: Array,
-    default: () => []
-  },
   deletingIds: {
     type: Array,
     default: () => []
-  },
-  cardsById: {
-    type: Object,
-    default: () => ({})
   },
   message: {
     type: String,

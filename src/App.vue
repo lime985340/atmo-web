@@ -13,8 +13,11 @@ import {
   formatTemperature,
   formatWindSpeed
 } from './utils/formatters'
+import { trimForecastByRange } from './utils/forecast'
+import { normalizeUser } from './utils/userProfile'
 import { runAuthBootstrap } from './composables/useAuthBootstrap'
 import { createFavoriteAddActions, createFavoriteAddState } from './composables/useFavoriteAdd'
+import { useTimedMessage } from './composables/useTimedMessage'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 const KAKAO_KEY = import.meta.env.VITE_KAKAO_APP_KEY || ''
@@ -51,22 +54,12 @@ const selectedFavoriteLocation = ref(null)
 const forecastHours = ref([])
 const allForecastHours = ref([])
 const forecastRange = ref(FORECAST_API_HORIZON_HOURS)
-const favoriteForecastRange = 6
 const favorites = ref([])
 const favoriteCards = ref([])
-const favoritesMessage = ref('')
-const globalMessage = ref('')
 const favoritesRequestSeq = ref(0)
 
-const favoriteCardsById = computed(() => {
-  const map = {}
-  favoriteCards.value.forEach((card) => {
-    const id = Number(card?.id)
-    if (!Number.isFinite(id)) return
-    map[id] = card
-  })
-  return map
-})
+const { message: favoritesMessage, setMessage: setFavoritesMessage } = useTimedMessage(4000)
+const { message: globalMessage, setMessage: setGlobalMessage } = useTimedMessage(4000)
 
 const isAuthenticated = computed(() => Boolean(accessToken.value))
 
@@ -151,105 +144,85 @@ onUnmounted(() => {
   window.removeEventListener('pagehide', onPageHide)
 })
 
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-const genericNameTokens = ['계정', '연동', 'google', 'kakao', 'naver', '구글', '카카오', '네이버']
-
-const isOpaqueName = (value) => {
-  if (typeof value !== 'string') return false
-  const trimmed = value.trim()
-  if (!trimmed) return false
-  if (uuidPattern.test(trimmed)) return true
-  return /^[0-9]{10,}$/.test(trimmed)
-}
-
-const isProviderPlaceholderName = (name, providerLabel) => {
-  if (!name) return false
-  const normalized = name.toLowerCase().replace(/\s+/g, '')
-  const providerToken = (providerLabel || '').toLowerCase().replace(/\s+/g, '')
-  if (providerToken && normalized === providerToken) return true
-  return genericNameTokens.some((token) => normalized.includes(token))
-}
-
-const shortUserId = (value) => {
-  if (typeof value !== 'string') return ''
-  const normalized = value.trim().replace(/[^a-zA-Z0-9]/g, '')
-  if (!normalized) return ''
-  return normalized.slice(0, 8)
-}
-
-const normalizeUser = (raw) => {
-  if (!raw || raw.authenticated !== true) return null
-  const name = typeof raw.name === 'string' ? raw.name.trim() : ''
-  const safeName = isOpaqueName(name) ? '' : name
-  const email = typeof raw.email === 'string' ? raw.email.trim() : ''
-  const provider = typeof raw.provider === 'string' ? raw.provider.toLowerCase() : ''
-  const providerLabel = providerDisplayMap[provider] || '소셜'
-  const emailPrefix = email.includes('@') ? email.split('@')[0] : ''
-  const idLabel = shortUserId(typeof raw.id === 'string' ? raw.id : '')
-  const friendlyName = isProviderPlaceholderName(safeName, providerLabel) ? '' : safeName
-  const displayName = friendlyName || emailPrefix || (idLabel ? `ID ${idLabel}` : '사용자')
-  const displayNameUi = friendlyName ? `${friendlyName}님` : displayName
-  const identityLabel = friendlyName ? '이름' : (idLabel ? '계정 ID' : '계정')
-  const accountLabel = friendlyName || (idLabel ? `ID ${idLabel}` : providerLabel)
-  return {
-    ...raw,
-    provider,
-    providerLabel,
-    displayName,
-    displayNameUi,
-    identityLabel,
-    accountLabel
+const buildRequestHeaders = (method, token, customHeaders) => {
+  const headers = {}
+  const shouldAttachJsonHeader = method !== 'GET' && method !== 'HEAD'
+  if (shouldAttachJsonHeader) {
+    headers['Content-Type'] = 'application/json'
   }
+
+  const hasToken = Boolean(token)
+  if (hasToken) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  if (customHeaders) {
+    Object.assign(headers, customHeaders)
+  }
+
+  return headers
+}
+
+class ApiError extends Error {
+  constructor(message, status, code = '') {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
+const toApiError = async (res) => {
+  const body = await res.json().catch(() => ({}))
+  const code = typeof body?.error === 'string' ? body.error : ''
+  const message = code || `요청 실패 (${res.status})`
+  return new ApiError(message, res.status, code)
 }
 
 const apiFetch = async (path, options = {}, allowRetry = true) => {
   const url = `${API_BASE}${path}`
-  const token = accessToken.value || localStorage.getItem('accessToken')
-  
-  // Build headers manually to ensure Authorization is set
-  const headers = {}
-
   const method = options.method || 'GET'
-  if (method !== 'GET' && method !== 'HEAD') {
-    headers['Content-Type'] = 'application/json'
-  }
-  
-  if (token) {
-    headers['Authorization'] = 'Bearer ' + token
-  }
-  
-  if (options.headers) {
-    Object.assign(headers, options.headers)
-  }
-  
+  const token = accessToken.value || localStorage.getItem('accessToken')
+  const headers = buildRequestHeaders(method, token, options.headers)
+
   const res = await fetch(url, {
     method,
     body: options.body,
-    headers: headers,
+    headers,
     credentials: 'include',
     signal: options.signal
   })
-  
-  if (res.status === 401 && allowRetry && path !== '/auth/refresh') {
-    await refreshAccessToken()
-    const newToken = accessToken.value || localStorage.getItem('accessToken')
-    if (newToken) {
-      return apiFetch(path, options, false)
-    }
+
+  const isUnauthorized = res.status === 401
+  const isRefreshRequest = path === '/auth/refresh'
+  const shouldTryRefresh = isUnauthorized && allowRetry && !isRefreshRequest
+
+  if (isUnauthorized && isRefreshRequest) {
+    throw await toApiError(res)
   }
 
-  if (res.status === 401) {
+  let didRefreshSucceed = false
+
+  if (shouldTryRefresh) {
+    didRefreshSucceed = await refreshAccessToken()
+  }
+
+  const shouldRetryOriginalRequest = shouldTryRefresh && didRefreshSucceed
+  if (shouldRetryOriginalRequest) {
+    return apiFetch(path, options, false)
+  }
+
+  const shouldForceLogout = isUnauthorized && !shouldRetryOriginalRequest
+  if (shouldForceLogout) {
     clearAuthSession()
     openApiLogoutDialog()
     throw new Error('로그인 상태가 만료되었습니다. 다시 로그인해 주세요.')
   }
-  
+
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.error || `요청 실패 (${res.status})`)
+    throw await toApiError(res)
   }
-  
+
   return res.json().catch(() => ({}))
 }
 
@@ -388,9 +361,26 @@ const refreshAccessToken = async () => {
         } catch {
           // If storage is unavailable (e.g., strict privacy mode), keep in-memory token for this session.
         }
+        return true
       }
+      accessToken.value = ''
+      try {
+        localStorage.removeItem('accessToken')
+      } catch {
+        // Ignore storage cleanup failure.
+      }
+      return false
     } catch (err) {
-      clearAuthSession()
+      if (err instanceof ApiError && err.status === 401) {
+        accessToken.value = ''
+        try {
+          localStorage.removeItem('accessToken')
+        } catch {
+          // Ignore storage cleanup failure.
+        }
+        return false
+      }
+      throw err
     }
   })()
 
@@ -408,8 +398,11 @@ const loadMe = async () => {
   }
   try {
     const data = await apiFetch('/me')
-    user.value = normalizeUser(data)
-  } catch {
+    user.value = normalizeUser(data, providerDisplayMap)
+  } catch (err) {
+    if (!(err instanceof ApiError && err.status === 401)) {
+      throw err
+    }
     user.value = null
   }
 }
@@ -427,10 +420,6 @@ const loadFavorites = async () => {
       apiFetch('/favorites'),
       apiFetch('/favorites/dashboard')
     ])
-    
-    // 디버깅: API 응답 로깅
-    console.log('[DEBUG] Favorites API response:', favoriteList)
-    console.log('[DEBUG] Dashboard API response:', dashboardList)
     
     if (requestSeq !== favoritesRequestSeq.value) return
 
@@ -450,9 +439,6 @@ const loadFavorites = async () => {
       return true
     })
     
-    // 디버깅: 처리된 데이터 로깅
-    console.log('[DEBUG] Processed favoriteCards:', favoriteCards.value)
-
     // 즐겨찾기 목록이 늘어나며 레이아웃이 변할 수 있어, 지도 relayout을 한번 보장
     await nextTick()
     scheduleMapRelayout()
@@ -461,42 +447,6 @@ const loadFavorites = async () => {
     setFavoritesMessage(message)
   }
 }
-
-const limitedForecast = (items, limit = favoriteForecastRange) => {
-  if (!Array.isArray(items)) return []
-  return items.slice(0, limit)
-}
-
-const parseForecastTime = (value) => {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : date
-}
-
-const trimForecastByRange = (items, hours) => {
-  if (!Array.isArray(items)) return []
-  const nowMs = Date.now()
-  const untilMs = nowMs + hours * 60 * 60 * 1000
-  return items
-    .filter((hour) => {
-      const parsed = parseForecastTime(hour?.forecastAt)
-      if (!parsed) return true
-      return parsed.getTime() <= untilMs
-    })
-    .sort((a, b) => {
-      const ta = parseForecastTime(a?.forecastAt)?.getTime() ?? Number.MAX_SAFE_INTEGER
-      const tb = parseForecastTime(b?.forecastAt)?.getTime() ?? Number.MAX_SAFE_INTEGER
-      return ta - tb
-    })
-}
-
-const forecastRangeOptions = computed(() => {
-  return [FORECAST_API_HORIZON_HOURS]
-})
-
-const forecastAvailability = computed(() => {
-  const entries = forecastRangeOptions.value.map((hours) => [hours, trimForecastByRange(allForecastHours.value, hours).length])
-  return Object.fromEntries(entries)
-})
 
 const applyForecastRange = (hours) => {
   forecastHours.value = trimForecastByRange(allForecastHours.value, hours)
@@ -671,9 +621,6 @@ const loadStationDetail = async (stationId, currentSelectionSeq = selectionSeq.v
     if (currentSelectionSeq !== selectionSeq.value || abortController.signal.aborted) return
     selectedStation.value = stationData
     
-    // 디버깅: 측정소 상세 데이터 로깅
-    console.log('[DEBUG] Station detail:', selectedStation.value)
-    
     // 예보 데이터 로드
     const forecastData = await apiFetch(`/stations/${resolvedId}/forecast?hours=${FORECAST_API_HORIZON_HOURS}`, { signal: abortController.signal })
     if (currentSelectionSeq !== selectionSeq.value || abortController.signal.aborted) return
@@ -693,29 +640,6 @@ const loadStationDetail = async (stationId, currentSelectionSeq = selectionSeq.v
     if (currentSelectionSeq === selectionSeq.value) {
       stationDetailLoading.value = false
     }
-  }
-}
-
-const setForecastRange = (hours) => {
-  forecastRange.value = hours
-  applyForecastRange(hours)
-}
-
-const setFavoritesMessage = (msg) => {
-  favoritesMessage.value = msg
-  if (msg) {
-    setTimeout(() => {
-      if (favoritesMessage.value === msg) favoritesMessage.value = ''
-    }, 4000)
-  }
-}
-
-const setGlobalMessage = (msg) => {
-  globalMessage.value = msg
-  if (msg) {
-    setTimeout(() => {
-      if (globalMessage.value === msg) globalMessage.value = ''
-    }, 4000)
   }
 }
 
@@ -944,7 +868,6 @@ onMounted(async () => {
   // 지도 초기화와 인증을 병렬로 실행 (초기 렌더링 블로킹 없음)
   // 각 작업은 개별적으로 완료되면 UI 업데이트
   initialize().catch(err => {
-    console.error('Map initialization failed:', err)
     setGlobalMessage('지도 로딩에 실패했습니다.')
   })
 
@@ -995,21 +918,15 @@ onMounted(async () => {
           v-if="selectedStation"
           :selected-station="selectedStation"
           :favorite-location="selectedFavoriteLocation"
-          :forecast-range="forecastRange"
           :forecast-hours="forecastHours"
           :format-forecast-time="formatForecastTime"
           :format-precip-type="formatPrecipType"
           :format-temperature="formatTemperature"
           :format-wind-speed="formatWindSpeed"
-          :forecast-availability="forecastAvailability"
-          :forecast-range-options="forecastRangeOptions"
           :is-loading="stationDetailLoading"
-          @set-forecast-range="setForecastRange"
         />
 
         <FavoritesList
-          :favorites="favorites"
-          :cards-by-id="favoriteCardsById"
           :deleting-ids="deletingFavoriteIds"
           :message="favoritesMessage"
           :favorite-cards="favoriteCards"

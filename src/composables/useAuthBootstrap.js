@@ -10,13 +10,7 @@ const readTokenFromHash = () => {
   return token
 }
 
-const loadUserWithRefreshFallback = async ({ loadMe, refreshAccessToken, accessToken, user }) => {
-  await loadMe()
-  if (user.value) return true
-
-  await refreshAccessToken()
-  if (!accessToken.value) return false
-
+const loadUserFromCurrentToken = async ({ loadMe, user }) => {
   await loadMe()
   return Boolean(user.value)
 }
@@ -54,10 +48,8 @@ export const runAuthBootstrap = async ({
       return
     }
 
-    const hasUser = await loadUserWithRefreshFallback({
+    const hasUser = await loadUserFromCurrentToken({
       loadMe,
-      refreshAccessToken,
-      accessToken,
       user
     })
 

@@ -24,21 +24,9 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
-  forecastRange: {
-    type: Number,
-    required: true
-  },
   forecastHours: {
     type: Array,
     default: () => []
-  },
-  forecastAvailability: {
-    type: Object,
-    default: () => ({})
-  },
-  forecastRangeOptions: {
-    type: Array,
-    default: () => [6]
   },
   formatForecastTime: {
     type: Function,
@@ -57,8 +45,6 @@ const props = defineProps({
     required: true
   }
 })
-
-const emit = defineEmits(['set-forecast-range'])
 
 const pmGrade = computed(() => {
   return resolveAirQualityGrade({
@@ -104,9 +90,6 @@ const weatherIcon = computed(() => {
   return resolveSkyIcon(next?.sky)
 })
 
-const onSetForecastRange = (hours) => {
-  emit('set-forecast-range', hours)
-}
 </script>
 
 <template>
