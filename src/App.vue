@@ -1,12 +1,23 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import TopBar from './components/TopBar.vue'
 import StationDetail from './components/StationDetail.vue'
 import FavoritesList from './components/FavoritesList.vue'
-import DashboardPanel from './components/DashboardPanel.vue'
+import FavoriteAddPanel from './components/FavoriteAddPanel.vue'
 import AuthModal from './components/AuthModal.vue'
 import ApiLogoutDialog from './components/ApiLogoutDialog.vue'
 import { providerDisplayMap } from './auth/providers'
+import {
+  formatForecastTime,
+  formatPrecipType,
+  formatTemperature,
+  formatWindSpeed
+} from './utils/formatters'
+import { trimForecastByRange } from './utils/forecast'
+import { normalizeUser } from './utils/userProfile'
+import { runAuthBootstrap } from './composables/useAuthBootstrap'
+import { createFavoriteAddActions, createFavoriteAddState } from './composables/useFavoriteAdd'
+import { useTimedMessage } from './composables/useTimedMessage'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 const KAKAO_KEY = import.meta.env.VITE_KAKAO_APP_KEY || ''
@@ -23,11 +34,13 @@ const lastPolygonKey = ref('')
 
 const loading = ref(false)
 const user = ref(null)
-const authLoading = ref(true)
-const authModalVisible = ref(false)
-const authModalTitle = ref('')
-const authModalDesc = ref('')
-const apiLogoutDialogVisible = ref(false)
+const authState = reactive({
+  loading: true,
+  modalVisible: false,
+  modalTitle: '',
+  modalDesc: '',
+  apiLogoutDialogVisible: false
+})
 const accessToken = ref(localStorage.getItem('accessToken') || '')
 const deletingFavoriteIds = ref([])
 const stationDetailLoading = ref(false)
@@ -41,29 +54,12 @@ const selectedFavoriteLocation = ref(null)
 const forecastHours = ref([])
 const allForecastHours = ref([])
 const forecastRange = ref(FORECAST_API_HORIZON_HOURS)
-const favoriteForecastRange = 6
 const favorites = ref([])
 const favoriteCards = ref([])
-const statusMessage = ref('')
-const favoritesMessage = ref('')
-const globalMessage = ref('')
 const favoritesRequestSeq = ref(0)
 
-const favoriteCardsById = computed(() => {
-  const map = {}
-  favoriteCards.value.forEach((card) => {
-    const id = Number(card?.id)
-    if (!Number.isFinite(id)) return
-    map[id] = card
-  })
-  return map
-})
-
-const favoriteAddOpen = ref(false)
-const favoriteAddBusy = ref(false)
-const favoriteAddAddress = ref('')
-const favoriteAddName = ref('')
-const favoriteAddCoords = ref(null)
+const { message: favoritesMessage, setMessage: setFavoritesMessage } = useTimedMessage(4000)
+const { message: globalMessage, setMessage: setGlobalMessage } = useTimedMessage(4000)
 
 const isAuthenticated = computed(() => Boolean(accessToken.value))
 
@@ -93,28 +89,24 @@ const providers = [
   { key: 'naver', label: '네이버', theme: 'naver' }
 ]
 
-const authHeader = computed(() =>
-  accessToken.value ? { Authorization: `Bearer ${accessToken.value}` } : {}
-)
-
 const openAuthRedirectModal = (provider) => {
   const key = String(provider || '').toLowerCase()
   const label = providerDisplayMap[key] || '소셜'
-  authModalTitle.value = `${label} 로그인을 진행합니다`
-  authModalDesc.value = ''
-  authModalVisible.value = true
+  authState.modalTitle = `${label} 로그인을 진행합니다`
+  authState.modalDesc = ''
+  authState.modalVisible = true
 }
 
 const openAuthCheckingModal = () => {
-  authModalVisible.value = true
-  authModalTitle.value = '로그인 확인 중입니다'
-  authModalDesc.value = '계정 상태를 안전하게 확인하고 있어요.'
+  authState.modalVisible = true
+  authState.modalTitle = '로그인 확인 중입니다'
+  authState.modalDesc = '계정 상태를 안전하게 확인하고 있어요.'
 }
 
 const closeAuthModal = () => {
-  authModalVisible.value = false
-  authModalTitle.value = ''
-  authModalDesc.value = ''
+  authState.modalVisible = false
+  authState.modalTitle = ''
+  authState.modalDesc = ''
 }
 
 const clearAuthSession = () => {
@@ -126,13 +118,13 @@ const clearAuthSession = () => {
 }
 
 const openApiLogoutDialog = () => {
-  if (authLoading.value) return
-  if (apiLogoutDialogVisible.value) return
-  apiLogoutDialogVisible.value = true
+  if (authState.loading) return
+  if (authState.apiLogoutDialogVisible) return
+  authState.apiLogoutDialogVisible = true
 }
 
 const closeApiLogoutDialog = () => {
-  apiLogoutDialogVisible.value = false
+  authState.apiLogoutDialogVisible = false
 }
 
 const onPageShow = (event) => {
@@ -152,105 +144,85 @@ onUnmounted(() => {
   window.removeEventListener('pagehide', onPageHide)
 })
 
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-const genericNameTokens = ['계정', '연동', 'google', 'kakao', 'naver', '구글', '카카오', '네이버']
-
-const isOpaqueName = (value) => {
-  if (typeof value !== 'string') return false
-  const trimmed = value.trim()
-  if (!trimmed) return false
-  if (uuidPattern.test(trimmed)) return true
-  return /^[0-9]{10,}$/.test(trimmed)
-}
-
-const isProviderPlaceholderName = (name, providerLabel) => {
-  if (!name) return false
-  const normalized = name.toLowerCase().replace(/\s+/g, '')
-  const providerToken = (providerLabel || '').toLowerCase().replace(/\s+/g, '')
-  if (providerToken && normalized === providerToken) return true
-  return genericNameTokens.some((token) => normalized.includes(token))
-}
-
-const shortUserId = (value) => {
-  if (typeof value !== 'string') return ''
-  const normalized = value.trim().replace(/[^a-zA-Z0-9]/g, '')
-  if (!normalized) return ''
-  return normalized.slice(0, 8)
-}
-
-const normalizeUser = (raw) => {
-  if (!raw || raw.authenticated !== true) return null
-  const name = typeof raw.name === 'string' ? raw.name.trim() : ''
-  const safeName = isOpaqueName(name) ? '' : name
-  const email = typeof raw.email === 'string' ? raw.email.trim() : ''
-  const provider = typeof raw.provider === 'string' ? raw.provider.toLowerCase() : ''
-  const providerLabel = providerDisplayMap[provider] || '소셜'
-  const emailPrefix = email.includes('@') ? email.split('@')[0] : ''
-  const idLabel = shortUserId(typeof raw.id === 'string' ? raw.id : '')
-  const friendlyName = isProviderPlaceholderName(safeName, providerLabel) ? '' : safeName
-  const displayName = friendlyName || emailPrefix || (idLabel ? `ID ${idLabel}` : '사용자')
-  const displayNameUi = friendlyName ? `${friendlyName}님` : displayName
-  const identityLabel = friendlyName ? '이름' : (idLabel ? '계정 ID' : '계정')
-  const accountLabel = friendlyName || (idLabel ? `ID ${idLabel}` : providerLabel)
-  return {
-    ...raw,
-    provider,
-    providerLabel,
-    displayName,
-    displayNameUi,
-    identityLabel,
-    accountLabel
+const buildRequestHeaders = (method, token, customHeaders) => {
+  const headers = {}
+  const shouldAttachJsonHeader = method !== 'GET' && method !== 'HEAD'
+  if (shouldAttachJsonHeader) {
+    headers['Content-Type'] = 'application/json'
   }
+
+  const hasToken = Boolean(token)
+  if (hasToken) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  if (customHeaders) {
+    Object.assign(headers, customHeaders)
+  }
+
+  return headers
+}
+
+class ApiError extends Error {
+  constructor(message, status, code = '') {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
+const toApiError = async (res) => {
+  const body = await res.json().catch(() => ({}))
+  const code = typeof body?.error === 'string' ? body.error : ''
+  const message = code || `요청 실패 (${res.status})`
+  return new ApiError(message, res.status, code)
 }
 
 const apiFetch = async (path, options = {}, allowRetry = true) => {
   const url = `${API_BASE}${path}`
-  const token = accessToken.value || localStorage.getItem('accessToken')
-  
-  // Build headers manually to ensure Authorization is set
-  const headers = {}
-
   const method = options.method || 'GET'
-  if (method !== 'GET' && method !== 'HEAD') {
-    headers['Content-Type'] = 'application/json'
-  }
-  
-  if (token) {
-    headers['Authorization'] = 'Bearer ' + token
-  }
-  
-  if (options.headers) {
-    Object.assign(headers, options.headers)
-  }
-  
+  const token = accessToken.value || localStorage.getItem('accessToken')
+  const headers = buildRequestHeaders(method, token, options.headers)
+
   const res = await fetch(url, {
     method,
     body: options.body,
-    headers: headers,
+    headers,
     credentials: 'include',
     signal: options.signal
   })
-  
-  if (res.status === 401 && allowRetry && path !== '/auth/refresh') {
-    await refreshAccessToken()
-    const newToken = accessToken.value || localStorage.getItem('accessToken')
-    if (newToken) {
-      return apiFetch(path, options, false)
-    }
+
+  const isUnauthorized = res.status === 401
+  const isRefreshRequest = path === '/auth/refresh'
+  const shouldTryRefresh = isUnauthorized && allowRetry && !isRefreshRequest
+
+  if (isUnauthorized && isRefreshRequest) {
+    throw await toApiError(res)
   }
 
-  if (res.status === 401) {
+  let didRefreshSucceed = false
+
+  if (shouldTryRefresh) {
+    didRefreshSucceed = await refreshAccessToken()
+  }
+
+  const shouldRetryOriginalRequest = shouldTryRefresh && didRefreshSucceed
+  if (shouldRetryOriginalRequest) {
+    return apiFetch(path, options, false)
+  }
+
+  const shouldForceLogout = isUnauthorized && !shouldRetryOriginalRequest
+  if (shouldForceLogout) {
     clearAuthSession()
     openApiLogoutDialog()
     throw new Error('로그인 상태가 만료되었습니다. 다시 로그인해 주세요.')
   }
-  
+
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.error || `요청 실패 (${res.status})`)
+    throw await toApiError(res)
   }
-  
+
   return res.json().catch(() => ({}))
 }
 
@@ -342,64 +314,6 @@ const geocodeAddress = async (address) => {
   })
 }
 
-const openFavoriteAdd = async () => {
-  if (!isAuthenticated.value) {
-    setFavoritesMessage('로그인 후 이용 가능한 서비스입니다.')
-    return
-  }
-  try {
-    const picked = await pickPostcodeAddress()
-    const coords = await geocodeAddress(picked.address)
-    favoriteAddAddress.value = picked.address
-    favoriteAddName.value = (picked.buildingName || picked.bname || picked.address).trim()
-    favoriteAddCoords.value = coords
-    favoriteAddOpen.value = true
-  } catch (err) {
-    const message = err instanceof Error ? err.message : '주소 검색을 완료하지 못했습니다.'
-    setFavoritesMessage(message)
-  }
-}
-
-const closeFavoriteAdd = () => {
-  favoriteAddOpen.value = false
-  favoriteAddBusy.value = false
-  favoriteAddAddress.value = ''
-  favoriteAddName.value = ''
-  favoriteAddCoords.value = null
-}
-
-const submitFavoriteAdd = async () => {
-  if (favoriteAddBusy.value) return
-  if (!favoriteAddCoords.value) {
-    setFavoritesMessage('주소 좌표를 확인할 수 없습니다.')
-    return
-  }
-  const description = String(favoriteAddName.value || '').trim() || favoriteAddAddress.value
-  if (!description) {
-    setFavoritesMessage('즐겨찾기 이름을 입력해 주세요.')
-    return
-  }
-  favoriteAddBusy.value = true
-  try {
-    await apiFetch('/favorites', {
-      method: 'POST',
-      body: JSON.stringify({
-        description,
-        lat: favoriteAddCoords.value.lat,
-        lng: favoriteAddCoords.value.lng,
-        address: favoriteAddAddress.value
-      })
-    })
-    closeFavoriteAdd()
-    await loadFavorites()
-  } catch (err) {
-    const message = err instanceof Error ? err.message : '즐겨찾기 추가에 실패했습니다.'
-    setFavoritesMessage(message)
-  } finally {
-    favoriteAddBusy.value = false
-  }
-}
-
 const login = async (provider) => {
   try {
     openAuthRedirectModal(provider)
@@ -447,9 +361,26 @@ const refreshAccessToken = async () => {
         } catch {
           // If storage is unavailable (e.g., strict privacy mode), keep in-memory token for this session.
         }
+        return true
       }
+      accessToken.value = ''
+      try {
+        localStorage.removeItem('accessToken')
+      } catch {
+        // Ignore storage cleanup failure.
+      }
+      return false
     } catch (err) {
-      clearAuthSession()
+      if (err instanceof ApiError && err.status === 401) {
+        accessToken.value = ''
+        try {
+          localStorage.removeItem('accessToken')
+        } catch {
+          // Ignore storage cleanup failure.
+        }
+        return false
+      }
+      throw err
     }
   })()
 
@@ -467,8 +398,11 @@ const loadMe = async () => {
   }
   try {
     const data = await apiFetch('/me')
-    user.value = normalizeUser(data)
-  } catch {
+    user.value = normalizeUser(data, providerDisplayMap)
+  } catch (err) {
+    if (!(err instanceof ApiError && err.status === 401)) {
+      throw err
+    }
     user.value = null
   }
 }
@@ -486,10 +420,6 @@ const loadFavorites = async () => {
       apiFetch('/favorites'),
       apiFetch('/favorites/dashboard')
     ])
-    
-    // 디버깅: API 응답 로깅
-    console.log('[DEBUG] Favorites API response:', favoriteList)
-    console.log('[DEBUG] Dashboard API response:', dashboardList)
     
     if (requestSeq !== favoritesRequestSeq.value) return
 
@@ -509,9 +439,6 @@ const loadFavorites = async () => {
       return true
     })
     
-    // 디버깅: 처리된 데이터 로깅
-    console.log('[DEBUG] Processed favoriteCards:', favoriteCards.value)
-
     // 즐겨찾기 목록이 늘어나며 레이아웃이 변할 수 있어, 지도 relayout을 한번 보장
     await nextTick()
     scheduleMapRelayout()
@@ -520,42 +447,6 @@ const loadFavorites = async () => {
     setFavoritesMessage(message)
   }
 }
-
-const limitedForecast = (items, limit = favoriteForecastRange) => {
-  if (!Array.isArray(items)) return []
-  return items.slice(0, limit)
-}
-
-const parseForecastTime = (value) => {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : date
-}
-
-const trimForecastByRange = (items, hours) => {
-  if (!Array.isArray(items)) return []
-  const nowMs = Date.now()
-  const untilMs = nowMs + hours * 60 * 60 * 1000
-  return items
-    .filter((hour) => {
-      const parsed = parseForecastTime(hour?.forecastAt)
-      if (!parsed) return true
-      return parsed.getTime() <= untilMs
-    })
-    .sort((a, b) => {
-      const ta = parseForecastTime(a?.forecastAt)?.getTime() ?? Number.MAX_SAFE_INTEGER
-      const tb = parseForecastTime(b?.forecastAt)?.getTime() ?? Number.MAX_SAFE_INTEGER
-      return ta - tb
-    })
-}
-
-const forecastRangeOptions = computed(() => {
-  return [FORECAST_API_HORIZON_HOURS]
-})
-
-const forecastAvailability = computed(() => {
-  const entries = forecastRangeOptions.value.map((hours) => [hours, trimForecastByRange(allForecastHours.value, hours).length])
-  return Object.fromEntries(entries)
-})
 
 const applyForecastRange = (hours) => {
   forecastHours.value = trimForecastByRange(allForecastHours.value, hours)
@@ -581,22 +472,6 @@ const cardToStationDetail = (card) => {
       precip: card.precipMm ?? null
     }
   }
-}
-
-const formatTemperature = (value) => {
-  if (value === null || value === undefined || value === '') return '-'
-  const num = Number(value)
-  if (!Number.isFinite(num)) return '-'
-  const rounded = Math.round(num * 10) / 10
-  if (Number.isInteger(rounded)) return String(rounded)
-  return rounded.toFixed(1)
-}
-
-const formatWindSpeed = (value) => {
-  if (value === null || value === undefined || value === '') return '-'
-  const num = Number(value)
-  if (!Number.isFinite(num)) return '-'
-  return (Math.round(num * 10) / 10).toFixed(1)
 }
 
 const removeFavorite = async (favoriteId) => {
@@ -746,9 +621,6 @@ const loadStationDetail = async (stationId, currentSelectionSeq = selectionSeq.v
     if (currentSelectionSeq !== selectionSeq.value || abortController.signal.aborted) return
     selectedStation.value = stationData
     
-    // 디버깅: 측정소 상세 데이터 로깅
-    console.log('[DEBUG] Station detail:', selectedStation.value)
-    
     // 예보 데이터 로드
     const forecastData = await apiFetch(`/stations/${resolvedId}/forecast?hours=${FORECAST_API_HORIZON_HOURS}`, { signal: abortController.signal })
     if (currentSelectionSeq !== selectionSeq.value || abortController.signal.aborted) return
@@ -771,37 +643,16 @@ const loadStationDetail = async (stationId, currentSelectionSeq = selectionSeq.v
   }
 }
 
-const setForecastRange = (hours) => {
-  forecastRange.value = hours
-  applyForecastRange(hours)
-}
-
-const setStatus = (msg) => {
-  statusMessage.value = msg
-  if (msg) {
-    setTimeout(() => {
-      if (statusMessage.value === msg) statusMessage.value = ''
-    }, 4000)
-  }
-}
-
-const setFavoritesMessage = (msg) => {
-  favoritesMessage.value = msg
-  if (msg) {
-    setTimeout(() => {
-      if (favoritesMessage.value === msg) favoritesMessage.value = ''
-    }, 4000)
-  }
-}
-
-const setGlobalMessage = (msg) => {
-  globalMessage.value = msg
-  if (msg) {
-    setTimeout(() => {
-      if (globalMessage.value === msg) globalMessage.value = ''
-    }, 4000)
-  }
-}
+const favoriteAddState = createFavoriteAddState()
+const { openFavoriteAdd, closeFavoriteAdd, submitFavoriteAdd } = createFavoriteAddActions({
+  state: favoriteAddState,
+  isAuthenticated,
+  pickPostcodeAddress,
+  geocodeAddress,
+  apiFetch,
+  loadFavorites,
+  setFavoritesMessage
+})
 
 const initKakao = () => new Promise((resolve, reject) => {
   if (window.kakao && window.kakao.maps) return resolve()
@@ -1013,80 +864,33 @@ onUnmounted(() => {
   mapRelayoutRaf = 0
 })
 
-const formatForecastTime = (value) => {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
-}
-
-const formatPrecipType = (value) => {
-  if (!value || value === 'NONE' || value === '0') return '없음'
-  const map = {
-    1: '비',
-    2: '비/눈',
-    3: '눈',
-    4: '소나기'
-  }
-  return map[value] || value
-}
-
 onMounted(async () => {
-  const hasAccessTokenInHash = window.location.hash.includes('access_token=')
-
-  if (hasAccessTokenInHash) {
-    const hash = new URLSearchParams(window.location.hash.replace('#', ''))
-    const token = hash.get('access_token')
-    if (token) {
-      accessToken.value = token
-      localStorage.setItem('accessToken', token)
-      window.history.replaceState({}, document.title, window.location.pathname)
-      openAuthCheckingModal()
-    }
-  }
-  
   // 지도 초기화와 인증을 병렬로 실행 (초기 렌더링 블로킹 없음)
   // 각 작업은 개별적으로 완료되면 UI 업데이트
   initialize().catch(err => {
-    console.error('Map initialization failed:', err)
     setGlobalMessage('지도 로딩에 실패했습니다.')
   })
-  
-  // 인증 확인 (비동기로 실행, 초기 렌더링 차단 없음)
-  ;(async () => {
-    try {
-      if (!accessToken.value || isJwtExpiredOrNearExpiry(accessToken.value)) {
-        await refreshAccessToken()
-      }
 
-      if (accessToken.value) {
-        await loadMe()
-        if (!user.value) {
-          await refreshAccessToken()
-          if (accessToken.value) {
-            await loadMe()
-          }
-        }
-        if (user.value) {
-          await loadFavorites()
-        }
-      } else {
-        user.value = null
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '로그인 정보를 확인하는 중 오류가 발생했습니다.'
-      setGlobalMessage(message)
-    } finally {
-      authLoading.value = false
-      closeAuthModal()
-    }
-  })()
+  runAuthBootstrap({
+    accessToken,
+    user,
+    setAuthLoading: (next) => {
+      authState.loading = next
+    },
+    isJwtExpiredOrNearExpiry,
+    refreshAccessToken,
+    loadMe,
+    loadFavorites,
+    openAuthCheckingModal,
+    closeAuthModal,
+    setGlobalMessage
+  })
 })
 </script>
 
 <template>
   <div class="app">
-    <TopBar :user="user" :providers="providers" :auth-loading="authLoading" @login="login" @logout="logout" />
+    <TopBar :user="user" :providers="providers" :auth-loading="authState.loading" @login="login" @logout="logout" />
 
     <main class="layout layout--double">
       <section class="panel panel--sidebar">
@@ -1114,21 +918,15 @@ onMounted(async () => {
           v-if="selectedStation"
           :selected-station="selectedStation"
           :favorite-location="selectedFavoriteLocation"
-          :forecast-range="forecastRange"
           :forecast-hours="forecastHours"
           :format-forecast-time="formatForecastTime"
           :format-precip-type="formatPrecipType"
           :format-temperature="formatTemperature"
           :format-wind-speed="formatWindSpeed"
-          :forecast-availability="forecastAvailability"
-          :forecast-range-options="forecastRangeOptions"
           :is-loading="stationDetailLoading"
-          @set-forecast-range="setForecastRange"
         />
 
         <FavoritesList
-          :favorites="favorites"
-          :cards-by-id="favoriteCardsById"
           :deleting-ids="deletingFavoriteIds"
           :message="favoritesMessage"
           :favorite-cards="favoriteCards"
@@ -1137,25 +935,15 @@ onMounted(async () => {
           @add="openFavoriteAdd"
         />
 
-        <div class="panel__section" v-if="favoriteAddOpen">
-          <div class="card favorite-add">
-            <p class="card__title">즐겨찾기 추가</p>
-            <p class="card__meta">{{ favoriteAddAddress }}</p>
-            <label class="label" for="favoriteAddName">이름</label>
-            <input
-              id="favoriteAddName"
-              class="input"
-              v-model="favoriteAddName"
-              type="text"
-              autocomplete="off"
-              placeholder="예: 우리집, 회사"
-            />
-            <div class="favorite-add__actions">
-              <button class="ghost" type="button" @click="closeFavoriteAdd" :disabled="favoriteAddBusy">취소</button>
-              <button class="primary" type="button" @click="submitFavoriteAdd" :disabled="favoriteAddBusy">+ 추가</button>
-            </div>
-          </div>
-        </div>
+        <FavoriteAddPanel
+          v-if="favoriteAddState.open"
+          :address="favoriteAddState.address"
+          :name="favoriteAddState.name"
+          :busy="favoriteAddState.busy"
+          @update:name="favoriteAddState.name = $event"
+          @cancel="closeFavoriteAdd"
+          @submit="submitFavoriteAdd"
+        />
       </section>
 
       <section class="map">
@@ -1167,12 +955,12 @@ onMounted(async () => {
     </main>
 
     <AuthModal
-      :visible="authModalVisible"
-      :title="authModalTitle"
-      :desc="authModalDesc"
+      :visible="authState.modalVisible"
+      :title="authState.modalTitle"
+      :desc="authState.modalDesc"
     />
     <ApiLogoutDialog
-      :visible="apiLogoutDialogVisible"
+      :visible="authState.apiLogoutDialogVisible"
       title="로그인이 해제되었습니다"
       desc="요청 처리 중 로그아웃 상태가 확인되었습니다. 다시 로그인해 주세요."
       confirm-label="확인"

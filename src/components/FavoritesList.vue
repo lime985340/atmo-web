@@ -1,16 +1,18 @@
 <script setup>
+import {
+  getFavoriteDotClass,
+  getPm10Label,
+  getPm10MetricClass,
+  getPm25Label,
+  getPm25MetricClass,
+  resolveAirQualityGrade
+} from '../utils/airQuality'
+import { formatDataTime, formatTemperature } from '../utils/formatters'
+
 const props = defineProps({
-  favorites: {
-    type: Array,
-    default: () => []
-  },
   deletingIds: {
     type: Array,
     default: () => []
-  },
-  cardsById: {
-    type: Object,
-    default: () => ({})
   },
   message: {
     type: String,
@@ -36,88 +38,13 @@ const onAdd = () => {
   emit('add')
 }
 
-const gradeFromPm = (pm25, pm10) => {
-  const p25 = Number(pm25)
-  const p10 = Number(pm10)
-  const g25 = Number.isFinite(p25)
-    ? (p25 <= 15 ? 1 : p25 <= 35 ? 2 : p25 <= 75 ? 3 : 4)
-    : null
-  const g10 = Number.isFinite(p10)
-    ? (p10 <= 30 ? 1 : p10 <= 80 ? 2 : p10 <= 150 ? 3 : 4)
-    : null
-  if (g25 === null && g10 === null) return null
-  if (g25 === null) return g10
-  if (g10 === null) return g25
-  return Math.max(g25, g10)
-}
-
 const dotClass = (card) => {
-  if (!card) return 'fav__dot fav__dot--unknown'
-  const rawGrade = Number(card.grade)
-  const grade = Number.isFinite(rawGrade) ? rawGrade : gradeFromPm(card.pm25, card.pm10)
-  if (grade === 1) return 'fav__dot fav__dot--good'
-  if (grade === 2) return 'fav__dot fav__dot--ok'
-  if (grade === 3) return 'fav__dot fav__dot--bad'
-  if (grade === 4) return 'fav__dot fav__dot--verybad'
-  return 'fav__dot fav__dot--unknown'
-}
-
-const metricClassFromPm10 = (value) => {
-  const num = Number(value)
-  if (!Number.isFinite(num)) return 'metric'
-  if (num <= 30) return 'metric metric--good'
-  if (num <= 80) return 'metric metric--ok'
-  if (num <= 150) return 'metric metric--bad'
-  return 'metric metric--verybad'
-}
-
-const metricClassFromPm25 = (value) => {
-  const num = Number(value)
-  if (!Number.isFinite(num)) return 'metric'
-  if (num <= 15) return 'metric metric--good'
-  if (num <= 35) return 'metric metric--ok'
-  if (num <= 75) return 'metric metric--bad'
-  return 'metric metric--verybad'
-}
-
-const formatTemperature = (value) => {
-  if (value === null || value === undefined || value === '') return '-'
-  const num = Number(value)
-  if (!Number.isFinite(num)) return '-'
-  const rounded = Math.round(num * 10) / 10
-  if (Number.isInteger(rounded)) return String(rounded)
-  return rounded.toFixed(1)
-}
-
-const getPm10Label = (value) => {
-  const num = Number(value)
-  if (!Number.isFinite(num)) return '-'
-  if (num <= 30) return '좋음'
-  if (num <= 80) return '보통'
-  if (num <= 150) return '나쁨'
-  return '매우나쁨'
-}
-
-const getPm25Label = (value) => {
-  const num = Number(value)
-  if (!Number.isFinite(num)) return '-'
-  if (num <= 15) return '좋음'
-  if (num <= 35) return '보통'
-  if (num <= 75) return '나쁨'
-  return '매우나쁨'
-}
-
-// 데이터 시간 포맷팅
-const formatDataTime = (value) => {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleString('ko-KR', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
+  const grade = resolveAirQualityGrade({
+    explicitGrade: card?.grade,
+    pm10: card?.pm10,
+    pm25: card?.pm25
   })
+  return getFavoriteDotClass(grade)
 }
 </script>
 
@@ -160,11 +87,11 @@ const formatDataTime = (value) => {
           <div class="fav-grid">
             <div>
               <span class="fav-label">미세먼지 (PM10)</span>
-              <strong :class="metricClassFromPm10(card.pm10)">{{ card.pm10 ?? '-' }} <span class="grade-label-small">({{ getPm10Label(card.pm10) }})</span></strong>
+              <strong :class="getPm10MetricClass(card.pm10)">{{ card.pm10 ?? '-' }} <span class="grade-label-small">({{ getPm10Label(card.pm10) }})</span></strong>
             </div>
             <div>
               <span class="fav-label">초미세먼지 (PM2.5)</span>
-              <strong :class="metricClassFromPm25(card.pm25)">{{ card.pm25 ?? '-' }} <span class="grade-label-small">({{ getPm25Label(card.pm25) }})</span></strong>
+              <strong :class="getPm25MetricClass(card.pm25)">{{ card.pm25 ?? '-' }} <span class="grade-label-small">({{ getPm25Label(card.pm25) }})</span></strong>
             </div>
             <div>
               <span class="fav-label">온도</span>
