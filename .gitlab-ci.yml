@@ -6,7 +6,6 @@ stages:
 variables:
   DOCKER_TLS_CERTDIR: ""
   DOCKER_BUILDKIT: "1"
-  GITOPS_BRANCH: "feature/clean-gitops-layout"
   GITOPS_REPOSITORY: "gitlab.com/lime985340/gitops.git"
 
 .default_docker:
@@ -52,18 +51,43 @@ gitops:update-dev:
   rules:
     - if: '$CI_COMMIT_BRANCH == "dev"'
   script:
-    - test -n "${GITOPS_PUSH_TOKEN:-}" || (echo "GITOPS_PUSH_TOKEN must be configured" >&2; exit 1)
-    - apk add --no-cache git
-    - git clone --branch "$GITOPS_BRANCH" "https://oauth2:${GITOPS_PUSH_TOKEN}@${GITOPS_REPOSITORY}" gitops
-    - cd gitops
-    - chmod +x ci/update-image-tag.sh
-    - IMAGE_TAG="dev-$(printf '%s' "$CI_COMMIT_SHA" | cut -c1-7)" WORKLOAD=web ENVIRONMENT=dev sh ci/update-image-tag.sh
-    - git config user.name "gitlab-ci[bot]"
-    - git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
-    - git add workloads/atmo/web/environments/dev/kustomization.yaml
-    - if git diff --cached --quiet; then echo "GitOps dev tag is already up to date"; exit 0; fi
-    - 'git commit -m "chore: deploy atmo-web dev ${CI_COMMIT_SHORT_SHA} [skip ci]"'
-    - git push origin "$GITOPS_BRANCH"
+    - |
+      set -eu
+      : "${GITOPS_PUSH_TOKEN:?GITOPS_PUSH_TOKEN must be configured}"
+      : "${GITOPS_PUSH_TOKEN_USER:?GITOPS_PUSH_TOKEN_USER must be configured}"
+      target_gitops_branch='feature/clean-gitops-layout'
+      apk add --no-cache git
+      askpass_file="$(mktemp)"
+      cleanup() { rm -f "$askpass_file"; }
+      trap cleanup EXIT INT TERM
+      cat > "$askpass_file" <<'ASKPASS'
+      #!/bin/sh
+      case "${1-}" in
+        *[Uu]sername*) printf '%s
+' "$GITOPS_PUSH_TOKEN_USER" ;;
+        *[Pp]assword*) printf '%s
+' "$GITOPS_PUSH_TOKEN" ;;
+        *) exit 1 ;;
+      esac
+      ASKPASS
+      chmod 700 "$askpass_file"
+      export GIT_ASKPASS="$askpass_file"
+      export GIT_TERMINAL_PROMPT=0
+      export LC_ALL=C
+      unset GIT_TRACE GIT_TRACE2 GIT_TRACE_CURL GIT_CURL_VERBOSE
+      git -c credential.helper= -c http.followRedirects=false \
+        clone --branch "$target_gitops_branch" \
+        "https://${GITOPS_REPOSITORY}" gitops
+      cd gitops
+      chmod +x ci/update-image-tag.sh
+      IMAGE_TAG="$(printf '%s' "$CI_COMMIT_SHA" | cut -c1-7)" WORKLOAD=web ENVIRONMENT=dev sh ci/update-image-tag.sh
+      git config user.name "gitlab-ci[bot]"
+      git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
+      git add workloads/atmo/web/environments/dev/kustomization.yaml
+      if git diff --cached --quiet; then echo "GitOps tag is already up to date"; exit 0; fi
+      git commit -m "chore: deploy atmo-web dev ${CI_COMMIT_SHORT_SHA} [skip ci]"
+      git -c credential.helper= -c http.followRedirects=false \
+        push origin "HEAD:${target_gitops_branch}"
 
 gitops:update-prod:
   stage: gitops
@@ -73,15 +97,40 @@ gitops:update-prod:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
   script:
-    - test -n "${GITOPS_PUSH_TOKEN:-}" || (echo "GITOPS_PUSH_TOKEN must be configured" >&2; exit 1)
-    - apk add --no-cache git
-    - git clone --branch "$GITOPS_BRANCH" "https://oauth2:${GITOPS_PUSH_TOKEN}@${GITOPS_REPOSITORY}" gitops
-    - cd gitops
-    - chmod +x ci/update-image-tag.sh
-    - IMAGE_TAG="$CI_COMMIT_TAG" WORKLOAD=web ENVIRONMENT=prod sh ci/update-image-tag.sh
-    - git config user.name "gitlab-ci[bot]"
-    - git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
-    - git add workloads/atmo/web/environments/prod/kustomization.yaml
-    - if git diff --cached --quiet; then echo "GitOps prod tag is already up to date"; exit 0; fi
-    - 'git commit -m "chore: deploy atmo-web ${CI_COMMIT_TAG} [skip ci]"'
-    - git push origin "$GITOPS_BRANCH"
+    - |
+      set -eu
+      : "${GITOPS_PUSH_TOKEN:?GITOPS_PUSH_TOKEN must be configured}"
+      : "${GITOPS_PUSH_TOKEN_USER:?GITOPS_PUSH_TOKEN_USER must be configured}"
+      target_gitops_branch='feature/clean-gitops-layout'
+      apk add --no-cache git
+      askpass_file="$(mktemp)"
+      cleanup() { rm -f "$askpass_file"; }
+      trap cleanup EXIT INT TERM
+      cat > "$askpass_file" <<'ASKPASS'
+      #!/bin/sh
+      case "${1-}" in
+        *[Uu]sername*) printf '%s
+' "$GITOPS_PUSH_TOKEN_USER" ;;
+        *[Pp]assword*) printf '%s
+' "$GITOPS_PUSH_TOKEN" ;;
+        *) exit 1 ;;
+      esac
+      ASKPASS
+      chmod 700 "$askpass_file"
+      export GIT_ASKPASS="$askpass_file"
+      export GIT_TERMINAL_PROMPT=0
+      export LC_ALL=C
+      unset GIT_TRACE GIT_TRACE2 GIT_TRACE_CURL GIT_CURL_VERBOSE
+      git -c credential.helper= -c http.followRedirects=false \
+        clone --branch "$target_gitops_branch" \
+        "https://${GITOPS_REPOSITORY}" gitops
+      cd gitops
+      chmod +x ci/update-image-tag.sh
+      IMAGE_TAG="$CI_COMMIT_TAG" WORKLOAD=web ENVIRONMENT=prod sh ci/update-image-tag.sh
+      git config user.name "gitlab-ci[bot]"
+      git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
+      git add workloads/atmo/web/environments/prod/kustomization.yaml
+      if git diff --cached --quiet; then echo "GitOps tag is already up to date"; exit 0; fi
+      git commit -m "chore: deploy atmo-web ${CI_COMMIT_TAG} [skip ci]"
+      git -c credential.helper= -c http.followRedirects=false \
+        push origin "HEAD:${target_gitops_branch}"
