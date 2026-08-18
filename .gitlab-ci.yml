@@ -55,7 +55,11 @@ gitops:update-dev:
       set -eu
       : "${GITOPS_PUSH_TOKEN:?GITOPS_PUSH_TOKEN must be configured}"
       : "${GITOPS_PUSH_TOKEN_USER:?GITOPS_PUSH_TOKEN_USER must be configured}"
-      target_gitops_branch='feature/clean-gitops-layout'
+      target_gitops_branch="${GITOPS_BRANCH:?GITOPS_BRANCH must be configured}"
+      case "$target_gitops_branch" in
+        feature/clean-gitops-layout|main) ;;
+        *) echo "Unsupported GitOps branch: $target_gitops_branch" >&2; exit 1 ;;
+      esac
       apk add --no-cache git
       askpass_file="$(mktemp)"
       cleanup() { rm -f "$askpass_file"; }
@@ -63,10 +67,8 @@ gitops:update-dev:
       cat > "$askpass_file" <<'ASKPASS'
       #!/bin/sh
       case "${1-}" in
-        *[Uu]sername*) printf '%s
-' "$GITOPS_PUSH_TOKEN_USER" ;;
-        *[Pp]assword*) printf '%s
-' "$GITOPS_PUSH_TOKEN" ;;
+        *[Uu]sername*) printf '%s\n' "$GITOPS_PUSH_TOKEN_USER" ;;
+        *[Pp]assword*) printf '%s\n' "$GITOPS_PUSH_TOKEN" ;;
         *) exit 1 ;;
       esac
       ASKPASS
@@ -80,7 +82,7 @@ gitops:update-dev:
         "https://${GITOPS_REPOSITORY}" gitops
       cd gitops
       chmod +x ci/update-image-tag.sh
-      IMAGE_TAG="$(printf '%s' "$CI_COMMIT_SHA" | cut -c1-7)" WORKLOAD=web ENVIRONMENT=dev sh ci/update-image-tag.sh
+      IMAGE_TAG="dev-$(printf '%s' "$CI_COMMIT_SHA" | cut -c1-7)" WORKLOAD=web ENVIRONMENT=dev sh ci/update-image-tag.sh
       git config user.name "gitlab-ci[bot]"
       git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
       git add workloads/atmo/web/environments/dev/kustomization.yaml
@@ -101,7 +103,11 @@ gitops:update-prod:
       set -eu
       : "${GITOPS_PUSH_TOKEN:?GITOPS_PUSH_TOKEN must be configured}"
       : "${GITOPS_PUSH_TOKEN_USER:?GITOPS_PUSH_TOKEN_USER must be configured}"
-      target_gitops_branch='feature/clean-gitops-layout'
+      target_gitops_branch="${GITOPS_BRANCH:?GITOPS_BRANCH must be configured}"
+      case "$target_gitops_branch" in
+        feature/clean-gitops-layout|main) ;;
+        *) echo "Unsupported GitOps branch: $target_gitops_branch" >&2; exit 1 ;;
+      esac
       apk add --no-cache git
       askpass_file="$(mktemp)"
       cleanup() { rm -f "$askpass_file"; }
@@ -109,10 +115,8 @@ gitops:update-prod:
       cat > "$askpass_file" <<'ASKPASS'
       #!/bin/sh
       case "${1-}" in
-        *[Uu]sername*) printf '%s
-' "$GITOPS_PUSH_TOKEN_USER" ;;
-        *[Pp]assword*) printf '%s
-' "$GITOPS_PUSH_TOKEN" ;;
+        *[Uu]sername*) printf '%s\n' "$GITOPS_PUSH_TOKEN_USER" ;;
+        *[Pp]assword*) printf '%s\n' "$GITOPS_PUSH_TOKEN" ;;
         *) exit 1 ;;
       esac
       ASKPASS
