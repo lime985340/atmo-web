@@ -23,6 +23,15 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 const KAKAO_KEY = import.meta.env.VITE_KAKAO_APP_KEY || ''
 const FORECAST_API_HORIZON_HOURS = 6
 
+// These endpoints are public. Do not attach a stale access token during the
+// parallel map/auth bootstrap, otherwise a public map request can fail before
+// the auth bootstrap has cleared an expired token from localStorage.
+const isPublicApiPath = (path) =>
+  /^\/auth(?:\/|$)/.test(path) ||
+  /^\/stations(?:\/|$)/.test(path) ||
+  /^\/map(?:\/|$)/.test(path) ||
+  /^\/dashboard(?:\/|$)/.test(path)
+
 const mapEl = ref(null)
 const map = ref(null)
 let mapResizeObserver = null
@@ -182,7 +191,9 @@ const toApiError = async (res) => {
 const apiFetch = async (path, options = {}, allowRetry = true) => {
   const url = `${API_BASE}${path}`
   const method = options.method || 'GET'
-  const token = accessToken.value || localStorage.getItem('accessToken')
+  const token = isPublicApiPath(path)
+    ? ''
+    : accessToken.value || localStorage.getItem('accessToken')
   const headers = buildRequestHeaders(method, token, options.headers)
 
   const res = await fetch(url, {
