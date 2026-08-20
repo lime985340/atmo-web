@@ -588,10 +588,9 @@ const loadStations = async () => {
   try {
     const snapshot = getMapSnapshot()
     if (!snapshot) {
-      const data = await apiFetch('/stations')
-      if (requestSeq !== stationsRequestSeq.value) return
-      stations.value = Array.isArray(data.stations) ? data.stations : []
-      renderStationMarkers(stations.value)
+      // Kakao Map bounds are unavailable during the initial render.
+      // Wait for the map's idle event instead of calling the slow full-list
+      // endpoint, which also includes air-quality and weather data.
       return
     }
     const { swLat, swLng, neLat, neLng } = snapshot
