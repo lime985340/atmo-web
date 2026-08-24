@@ -5,6 +5,7 @@ stages:
 variables:
   DOCKER_TLS_CERTDIR: ""
   DOCKER_BUILDKIT: "1"
+  VITE_API_BASE_URL: "/atmo/api/v1"
 
 .default_docker:
   image: docker:24.0.9

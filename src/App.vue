@@ -19,7 +19,7 @@ import { runAuthBootstrap } from './composables/useAuthBootstrap'
 import { createFavoriteAddActions, createFavoriteAddState } from './composables/useFavoriteAdd'
 import { useTimedMessage } from './composables/useTimedMessage'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/atmo/api/v1'
 const KAKAO_KEY = import.meta.env.VITE_KAKAO_APP_KEY || ''
 const FORECAST_API_HORIZON_HOURS = 6
 
