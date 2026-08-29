@@ -12,11 +12,15 @@ npm run build
 ```
 
 `VITE_API_BASE_URL`은 Vite 빌드 시 번들에 포함되므로 Kubernetes Secret이
-아닙니다. GitLab CI/CD Variable에도 다음 값을 사용합니다.
+아닙니다. 이 저장소의 `.gitlab-ci.yml`에 정의한 빌드 기본값만 사용하며,
+프로젝트 변수로 같은 키를 중복 정의하지 않습니다.
 
 ```text
 VITE_API_BASE_URL=/atmo/api/v1
 ```
+
+Kakao 키가 필요한 경우에만 프로젝트 Protected/Masked 변수
+`VITE_KAKAO_APP_KEY`를 설정합니다.
 
 ## 운영 경로
 
