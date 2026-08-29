@@ -1,6 +1,7 @@
 stages:
   - test
-  - docker
+  - image
+  - release
   - gitops
 
 variables:
@@ -10,11 +11,12 @@ variables:
   VITE_API_BASE_URL: "/atmo/api/v1"
 
 .default_docker:
-  image: docker:24.0.9
+  image: docker:27.5.1-cli
   services:
-    - name: docker:24.0.9-dind
+    - name: docker:27.5.1-dind
       command: ["--tls=false"]
   before_script:
+    - until docker info; do sleep 2; done
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
 
 test:
@@ -24,42 +26,57 @@ test:
     - npm ci
     - npm run build
 
-docker:dev:
-  stage: docker
+build_images:
+  stage: image
   extends: .default_docker
+  needs: ["test"]
   rules:
-    - if: '$CI_COMMIT_BRANCH == "dev"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - when: never
   script:
-    - IMAGE_TAG="dev-$(echo "$CI_COMMIT_SHA" | cut -c1-7)"
-    - docker build --build-arg VITE_API_BASE_URL="$VITE_API_BASE_URL" --build-arg VITE_KAKAO_APP_KEY="$VITE_KAKAO_APP_KEY" -t "$CI_REGISTRY_IMAGE:${IMAGE_TAG}" .
-    - docker push "$CI_REGISTRY_IMAGE:${IMAGE_TAG}"
+    - |
+      export IMAGE_TAG="$CI_COMMIT_SHA"
+      docker build \
+        --build-arg VITE_API_BASE_URL="$VITE_API_BASE_URL" \
+        --build-arg VITE_KAKAO_APP_KEY="$VITE_KAKAO_APP_KEY" \
+        -t "$CI_REGISTRY_IMAGE:$IMAGE_TAG" .
+      docker push "$CI_REGISTRY_IMAGE:$IMAGE_TAG"
 
-docker:release:
-  stage: docker
-  extends: .default_docker
+promote_release:
+  stage: release
+  image: docker:27.5.1-cli
+  needs: ["test"]
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
+    - when: never
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
   script:
-    - IMAGE_TAG="$CI_COMMIT_TAG"
-    - docker build --build-arg VITE_API_BASE_URL="$VITE_API_BASE_URL" --build-arg VITE_KAKAO_APP_KEY="$VITE_KAKAO_APP_KEY" -t "$CI_REGISTRY_IMAGE:${IMAGE_TAG}" .
-    - docker push "$CI_REGISTRY_IMAGE:${IMAGE_TAG}"
+    - |
+      source_tag="$CI_COMMIT_SHA"
+      release_tag="$CI_COMMIT_TAG"
+      docker buildx imagetools inspect "$CI_REGISTRY_IMAGE:$source_tag" --format '{{.Manifest.Digest}}'
+      docker buildx imagetools create --prefer-index=false \
+        --tag "$CI_REGISTRY_IMAGE:$release_tag" \
+        "$CI_REGISTRY_IMAGE:$source_tag"
+      source_digest="$(docker buildx imagetools inspect "$CI_REGISTRY_IMAGE:$source_tag" --format '{{.Manifest.Digest}}')"
+      release_digest="$(docker buildx imagetools inspect "$CI_REGISTRY_IMAGE:$release_tag" --format '{{.Manifest.Digest}}')"
+      test "$source_digest" = "$release_digest"
 
-gitops:update-dev:
+update_gitops_dev:
   stage: gitops
   image: alpine:3.20
-  needs:
-    - job: docker:dev
+  needs: ["build_images"]
   rules:
-    - if: '$CI_COMMIT_BRANCH == "dev"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $GITOPS_PUSH_TOKEN && $GITOPS_PUSH_TOKEN_USER'
+    - when: never
   script:
     - |
       set -eu
-      : "${GITOPS_PUSH_TOKEN:?GITOPS_PUSH_TOKEN must be configured}"
-      : "${GITOPS_PUSH_TOKEN_USER:?GITOPS_PUSH_TOKEN_USER must be configured}"
-      target_gitops_branch="${GITOPS_BRANCH:?GITOPS_BRANCH must be configured}"
-      case "$target_gitops_branch" in
+      : "${GITOPS_BRANCH:?GITOPS_BRANCH must be configured in the lime Group}"
+      case "$GITOPS_BRANCH" in
         feature/clean-gitops-layout|main) ;;
-        *) echo "Unsupported GitOps branch: $target_gitops_branch" >&2; exit 1 ;;
+        *) echo "Unsupported GitOps branch: $GITOPS_BRANCH" >&2; exit 1 ;;
       esac
       apk add --no-cache git
       askpass_file="$(mktemp)"
@@ -79,35 +96,30 @@ gitops:update-dev:
       export LC_ALL=C
       unset GIT_TRACE GIT_TRACE2 GIT_TRACE_CURL GIT_CURL_VERBOSE
       git -c credential.helper= -c http.followRedirects=false \
-        clone --branch "$target_gitops_branch" \
-        "https://${GITOPS_REPOSITORY}" gitops
+        clone --branch "$GITOPS_BRANCH" "https://${GITOPS_REPOSITORY}" gitops
       cd gitops
-      chmod +x ci/update-image-tag.sh
-      IMAGE_TAG="dev-$(printf '%s' "$CI_COMMIT_SHA" | cut -c1-7)" WORKLOAD=web ENVIRONMENT=dev sh ci/update-image-tag.sh
+      APPLICATION=atmo IMAGE_TAG="$CI_COMMIT_SHA" WORKLOAD=web ENVIRONMENT=dev sh ci/update-image-tag.sh
       git config user.name "gitlab-ci[bot]"
       git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
       git add workloads/atmo/web/environments/dev/kustomization.yaml
       if git diff --cached --quiet; then echo "GitOps tag is already up to date"; exit 0; fi
-      git commit -m "chore: deploy atmo-web dev ${CI_COMMIT_SHORT_SHA} [skip ci]"
-      git -c credential.helper= -c http.followRedirects=false \
-        push origin "HEAD:${target_gitops_branch}"
+      git commit -m "chore: deploy atmo-web dev $CI_COMMIT_SHA [skip ci]"
+      git -c credential.helper= -c http.followRedirects=false push origin "HEAD:$GITOPS_BRANCH"
 
-gitops:update-prod:
+update_gitops_prod:
   stage: gitops
   image: alpine:3.20
-  needs:
-    - job: docker:release
+  needs: ["promote_release"]
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/ && $GITOPS_PUSH_TOKEN && $GITOPS_PUSH_TOKEN_USER'
+    - when: never
   script:
     - |
       set -eu
-      : "${GITOPS_PUSH_TOKEN:?GITOPS_PUSH_TOKEN must be configured}"
-      : "${GITOPS_PUSH_TOKEN_USER:?GITOPS_PUSH_TOKEN_USER must be configured}"
-      target_gitops_branch="${GITOPS_BRANCH:?GITOPS_BRANCH must be configured}"
-      case "$target_gitops_branch" in
+      : "${GITOPS_BRANCH:?GITOPS_BRANCH must be configured in the lime Group}"
+      case "$GITOPS_BRANCH" in
         feature/clean-gitops-layout|main) ;;
-        *) echo "Unsupported GitOps branch: $target_gitops_branch" >&2; exit 1 ;;
+        *) echo "Unsupported GitOps branch: $GITOPS_BRANCH" >&2; exit 1 ;;
       esac
       apk add --no-cache git
       askpass_file="$(mktemp)"
@@ -127,15 +139,12 @@ gitops:update-prod:
       export LC_ALL=C
       unset GIT_TRACE GIT_TRACE2 GIT_TRACE_CURL GIT_CURL_VERBOSE
       git -c credential.helper= -c http.followRedirects=false \
-        clone --branch "$target_gitops_branch" \
-        "https://${GITOPS_REPOSITORY}" gitops
+        clone --branch "$GITOPS_BRANCH" "https://${GITOPS_REPOSITORY}" gitops
       cd gitops
-      chmod +x ci/update-image-tag.sh
-      IMAGE_TAG="$CI_COMMIT_TAG" WORKLOAD=web ENVIRONMENT=prod sh ci/update-image-tag.sh
+      APPLICATION=atmo IMAGE_TAG="$CI_COMMIT_TAG" WORKLOAD=web ENVIRONMENT=prod sh ci/update-image-tag.sh
       git config user.name "gitlab-ci[bot]"
       git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
       git add workloads/atmo/web/environments/prod/kustomization.yaml
       if git diff --cached --quiet; then echo "GitOps tag is already up to date"; exit 0; fi
-      git commit -m "chore: deploy atmo-web ${CI_COMMIT_TAG} [skip ci]"
-      git -c credential.helper= -c http.followRedirects=false \
-        push origin "HEAD:${target_gitops_branch}"
+      git commit -m "chore: release atmo-web $CI_COMMIT_TAG [skip ci]"
+      git -c credential.helper= -c http.followRedirects=false push origin "HEAD:$GITOPS_BRANCH"
