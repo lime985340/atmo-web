@@ -98,7 +98,7 @@ update_gitops_dev:
       git -c credential.helper= -c http.followRedirects=false \
         clone --branch "$GITOPS_BRANCH" "https://${GITOPS_REPOSITORY}" gitops
       cd gitops
-      IMAGE_TAG="$CI_COMMIT_SHA" WORKLOAD=web ENVIRONMENT=dev sh ci/update-image-tag.sh
+      APPLICATION=atmo IMAGE_TAG="$CI_COMMIT_SHA" WORKLOAD=web ENVIRONMENT=dev sh ci/update-image-tag.sh
       git config user.name "gitlab-ci[bot]"
       git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
       git add workloads/atmo/web/environments/dev/kustomization.yaml
@@ -141,7 +141,7 @@ update_gitops_prod:
       git -c credential.helper= -c http.followRedirects=false \
         clone --branch "$GITOPS_BRANCH" "https://${GITOPS_REPOSITORY}" gitops
       cd gitops
-      IMAGE_TAG="$CI_COMMIT_TAG" WORKLOAD=web ENVIRONMENT=prod sh ci/update-image-tag.sh
+      APPLICATION=atmo IMAGE_TAG="$CI_COMMIT_TAG" WORKLOAD=web ENVIRONMENT=prod sh ci/update-image-tag.sh
       git config user.name "gitlab-ci[bot]"
       git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
       git add workloads/atmo/web/environments/prod/kustomization.yaml
