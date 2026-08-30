@@ -95,16 +95,25 @@ update_gitops_dev:
       export GIT_TERMINAL_PROMPT=0
       export LC_ALL=C
       unset GIT_TRACE GIT_TRACE2 GIT_TRACE_CURL GIT_CURL_VERBOSE
-      git -c credential.helper= -c http.followRedirects=false \
-        clone --branch "$GITOPS_BRANCH" "https://${GITOPS_REPOSITORY}" gitops
-      cd gitops
-      APPLICATION=atmo IMAGE_TAG="$CI_COMMIT_SHA" WORKLOAD=web ENVIRONMENT=dev sh ci/update-image-tag.sh
-      git config user.name "gitlab-ci[bot]"
-      git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
-      git add workloads/atmo/web/environments/dev/kustomization.yaml
-      if git diff --cached --quiet; then echo "GitOps tag is already up to date"; exit 0; fi
-      git commit -m "chore: deploy atmo-web dev $CI_COMMIT_SHA [skip ci]"
-      git -c credential.helper= -c http.followRedirects=false push origin "HEAD:$GITOPS_BRANCH"
+      for attempt in 1 2 3; do
+        rm -rf gitops
+        git -c credential.helper= -c http.followRedirects=false \
+          clone --branch "$GITOPS_BRANCH" "https://${GITOPS_REPOSITORY}" gitops
+        cd gitops
+        APPLICATION=atmo IMAGE_TAG="$CI_COMMIT_SHA" WORKLOAD=web ENVIRONMENT=dev sh ci/update-image-tag.sh
+        git config user.name "gitlab-ci[bot]"
+        git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
+        git add workloads/atmo/web/environments/dev/kustomization.yaml
+        if git diff --cached --quiet; then echo "GitOps tag is already up to date"; exit 0; fi
+        git commit -m "chore: deploy atmo-web dev $CI_COMMIT_SHA"
+        if git -c credential.helper= -c http.followRedirects=false push origin "HEAD:$GITOPS_BRANCH"; then
+          exit 0
+        fi
+        cd ..
+        echo "GitOps branch changed while pushing; retrying ($attempt/3)" >&2
+      done
+      echo "GitOps push failed after 3 attempts" >&2
+      exit 1
 
 update_gitops_prod:
   stage: gitops
@@ -138,13 +147,22 @@ update_gitops_prod:
       export GIT_TERMINAL_PROMPT=0
       export LC_ALL=C
       unset GIT_TRACE GIT_TRACE2 GIT_TRACE_CURL GIT_CURL_VERBOSE
-      git -c credential.helper= -c http.followRedirects=false \
-        clone --branch "$GITOPS_BRANCH" "https://${GITOPS_REPOSITORY}" gitops
-      cd gitops
-      APPLICATION=atmo IMAGE_TAG="$CI_COMMIT_TAG" WORKLOAD=web ENVIRONMENT=prod sh ci/update-image-tag.sh
-      git config user.name "gitlab-ci[bot]"
-      git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
-      git add workloads/atmo/web/environments/prod/kustomization.yaml
-      if git diff --cached --quiet; then echo "GitOps tag is already up to date"; exit 0; fi
-      git commit -m "chore: release atmo-web $CI_COMMIT_TAG [skip ci]"
-      git -c credential.helper= -c http.followRedirects=false push origin "HEAD:$GITOPS_BRANCH"
+      for attempt in 1 2 3; do
+        rm -rf gitops
+        git -c credential.helper= -c http.followRedirects=false \
+          clone --branch "$GITOPS_BRANCH" "https://${GITOPS_REPOSITORY}" gitops
+        cd gitops
+        APPLICATION=atmo IMAGE_TAG="$CI_COMMIT_TAG" WORKLOAD=web ENVIRONMENT=prod sh ci/update-image-tag.sh
+        git config user.name "gitlab-ci[bot]"
+        git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
+        git add workloads/atmo/web/environments/prod/kustomization.yaml
+        if git diff --cached --quiet; then echo "GitOps tag is already up to date"; exit 0; fi
+        git commit -m "chore: release atmo-web $CI_COMMIT_TAG"
+        if git -c credential.helper= -c http.followRedirects=false push origin "HEAD:$GITOPS_BRANCH"; then
+          exit 0
+        fi
+        cd ..
+        echo "GitOps branch changed while pushing; retrying ($attempt/3)" >&2
+      done
+      echo "GitOps push failed after 3 attempts" >&2
+      exit 1
