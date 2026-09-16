@@ -74,11 +74,7 @@ update_gitops_dev:
   script:
     - |
       set -eu
-      : "${GITOPS_BRANCH:?GITOPS_BRANCH must be configured in the lime Group}"
-      case "$GITOPS_BRANCH" in
-        feature/clean-gitops-layout|main) ;;
-        *) echo "Unsupported GitOps branch: $GITOPS_BRANCH" >&2; exit 1 ;;
-      esac
+      target_gitops_branch="feature/clean-gitops-layout"
       apk add --no-cache git
       askpass_file="$(mktemp)"
       cleanup() { rm -f "$askpass_file"; }
@@ -99,15 +95,16 @@ update_gitops_dev:
       for attempt in 1 2 3; do
         rm -rf gitops
         git -c credential.helper= -c http.followRedirects=false \
-          clone --branch "$GITOPS_BRANCH" "https://${GITOPS_REPOSITORY}" gitops
+          clone --branch "$target_gitops_branch" "https://${GITOPS_REPOSITORY}" gitops
         cd gitops
+        test -f ci/update-image-tag.sh
         APPLICATION=atmo IMAGE_TAG="$CI_COMMIT_SHA" WORKLOAD=web ENVIRONMENT=dev sh ci/update-image-tag.sh
         git config user.name "gitlab-ci[bot]"
         git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
         git add workloads/atmo/web/environments/dev/kustomization.yaml
         if git diff --cached --quiet; then echo "GitOps tag is already up to date"; exit 0; fi
         git commit -m "chore: deploy atmo-web dev $CI_COMMIT_SHA"
-        if git -c credential.helper= -c http.followRedirects=false push origin "HEAD:$GITOPS_BRANCH"; then
+        if git -c credential.helper= -c http.followRedirects=false push origin "HEAD:$target_gitops_branch"; then
           exit 0
         fi
         cd ..
@@ -126,11 +123,7 @@ update_gitops_prod:
   script:
     - |
       set -eu
-      : "${GITOPS_BRANCH:?GITOPS_BRANCH must be configured in the lime Group}"
-      case "$GITOPS_BRANCH" in
-        feature/clean-gitops-layout|main) ;;
-        *) echo "Unsupported GitOps branch: $GITOPS_BRANCH" >&2; exit 1 ;;
-      esac
+      target_gitops_branch="feature/clean-gitops-layout"
       apk add --no-cache git
       askpass_file="$(mktemp)"
       cleanup() { rm -f "$askpass_file"; }
@@ -151,15 +144,16 @@ update_gitops_prod:
       for attempt in 1 2 3; do
         rm -rf gitops
         git -c credential.helper= -c http.followRedirects=false \
-          clone --branch "$GITOPS_BRANCH" "https://${GITOPS_REPOSITORY}" gitops
+          clone --branch "$target_gitops_branch" "https://${GITOPS_REPOSITORY}" gitops
         cd gitops
+        test -f ci/update-image-tag.sh
         APPLICATION=atmo IMAGE_TAG="$CI_COMMIT_TAG" WORKLOAD=web ENVIRONMENT=prod sh ci/update-image-tag.sh
         git config user.name "gitlab-ci[bot]"
         git config user.email "gitlab-ci[bot]@users.noreply.gitlab.com"
         git add workloads/atmo/web/environments/prod/kustomization.yaml
         if git diff --cached --quiet; then echo "GitOps tag is already up to date"; exit 0; fi
         git commit -m "chore: release atmo-web $CI_COMMIT_TAG"
-        if git -c credential.helper= -c http.followRedirects=false push origin "HEAD:$GITOPS_BRANCH"; then
+        if git -c credential.helper= -c http.followRedirects=false push origin "HEAD:$target_gitops_branch"; then
           exit 0
         fi
         cd ..
