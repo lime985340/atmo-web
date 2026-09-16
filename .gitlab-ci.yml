@@ -7,7 +7,10 @@ stages:
 variables:
   DOCKER_TLS_CERTDIR: ""
   DOCKER_BUILDKIT: "1"
-  GITOPS_REPOSITORY: "gitlab.com/lime985340/gitops.git"
+  GITOPS_REPOSITORY: "gitlab.com/lime985340/platform-gitops.git"
+  GITOPS_BRANCH:
+    value: "main"
+    description: "GitOps branch to update. Production defaults to main; override only for a dedicated feature environment."
   VITE_API_BASE_URL: "/atmo/api/v1"
 
 .default_docker:
@@ -74,7 +77,11 @@ update_gitops_dev:
   script:
     - |
       set -eu
-      target_gitops_branch="feature/clean-gitops-layout"
+      target_gitops_branch="${GITOPS_BRANCH:-main}"
+      case "$target_gitops_branch" in
+        main|feature/*) ;;
+        *) echo "GITOPS_BRANCH must be main or a feature/* branch" >&2; exit 1 ;;
+      esac
       apk add --no-cache git
       askpass_file="$(mktemp)"
       cleanup() { rm -f "$askpass_file"; }
@@ -123,7 +130,11 @@ update_gitops_prod:
   script:
     - |
       set -eu
-      target_gitops_branch="feature/clean-gitops-layout"
+      target_gitops_branch="${GITOPS_BRANCH:-main}"
+      case "$target_gitops_branch" in
+        main|feature/*) ;;
+        *) echo "GITOPS_BRANCH must be main or a feature/* branch" >&2; exit 1 ;;
+      esac
       apk add --no-cache git
       askpass_file="$(mktemp)"
       cleanup() { rm -f "$askpass_file"; }
