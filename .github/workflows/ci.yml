@@ -10,8 +10,13 @@ on:
     inputs:
       release_tag:
         description: "Optional vMAJOR.MINOR.PATCH tag to request a production GitOps PR (image must already exist in GHCR)"
-        required: true
+        required: false
         type: string
+      deploy_dev:
+        description: "Manually deploy the latest already-published main SHA to dev"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -80,7 +85,7 @@ jobs:
             VITE_KAKAO_APP_KEY=${{ secrets.VITE_KAKAO_APP_KEY }}
 
   update-gitops:
-    if: ${{ always() && needs.verify.result == 'success' && ((github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.publish-ghcr.result == 'success' && vars.GHCR_DEPLOY_DEV_ENABLED == 'true') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '' && vars.GHCR_DEPLOY_PROD_ENABLED == 'true')) }}
+    if: ${{ always() && needs.verify.result == 'success' && ((github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.publish-ghcr.result == 'success' && vars.GHCR_DEPLOY_DEV_ENABLED == 'true') || ((github.event_name == 'workflow_dispatch' && inputs.deploy_dev == true && github.ref == 'refs/heads/main' && vars.GHCR_DEPLOY_DEV_ENABLED == 'true') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '' && vars.GHCR_DEPLOY_PROD_ENABLED == 'true'))) }}
     needs: [verify, publish-ghcr]
     runs-on: ubuntu-latest
     permissions:
@@ -102,14 +107,14 @@ jobs:
             exit 1
           fi
       - name: Log in to GHCR for release image verification
-        if: ${{ inputs.release_tag != '' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.release_tag != '' || inputs.deploy_dev == true) }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Check that a manually selected release image exists
-        if: ${{ inputs.release_tag != '' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.release_tag != '' || inputs.deploy_dev == true) }}
         run: |
           set -eu
           printf '%s' "$IMAGE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || {
