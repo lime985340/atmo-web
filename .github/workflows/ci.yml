@@ -113,17 +113,24 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Check that a manually selected release image exists
+      - name: Check that the manually selected image exists
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.release_tag != '' || inputs.deploy_dev == true) }}
         run: |
           set -eu
-          printf '%s' "$IMAGE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || {
-            echo "::error::Use a release tag in vMAJOR.MINOR.PATCH format."
-            exit 1
-          }
+          if [ "$IMAGE_ENVIRONMENT" = prod ]; then
+            printf '%s' "$IMAGE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || {
+              echo "::error::Use a release tag in vMAJOR.MINOR.PATCH format."
+              exit 1
+            }
+          else
+            printf '%s' "$IMAGE_TAG" | grep -Eq '^[a-f0-9]{40}$' || {
+              echo "::error::The dev deployment must use a full commit SHA."
+              exit 1
+            }
+          fi
           docker manifest inspect "$IMAGE_NAME:$IMAGE_TAG" >/dev/null
         env:
-          IMAGE_TAG: ${{ inputs.release_tag }}
+          IMAGE_TAG: ${{ inputs.release_tag != '' && inputs.release_tag || github.sha }}
       - name: Check out GitHub GitOps
         uses: actions/checkout@v4
         with:
