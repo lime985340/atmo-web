@@ -5,6 +5,7 @@ on:
     branches: [main]
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -26,3 +27,102 @@ jobs:
       - run: npm run build
       - name: Verify API path is in the built bundle
         run: grep -R -F -q "/atmo/api/v1" dist/assets || (echo "The built bundle must contain /atmo/api/v1" >&2; exit 1)
+
+  publish-ghcr:
+    if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check semantic version tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Only vMAJOR.MINOR.PATCH release tags are supported." >&2
+            exit 1
+          fi
+      - name: Require the Kakao web key
+        env:
+          VITE_KAKAO_APP_KEY: ${{ secrets.VITE_KAKAO_APP_KEY }}
+        run: test -n "$VITE_KAKAO_APP_KEY"
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/lime985340/atmo-web
+          tags: |
+            type=raw,value=${{ github.sha }}
+            type=ref,event=tag
+      - name: Build and publish image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            VITE_API_BASE_URL=/atmo/api/v1
+            VITE_KAKAO_APP_KEY=${{ secrets.VITE_KAKAO_APP_KEY }}
+
+  update-gitops:
+    if: ${{ needs.publish-ghcr.result == 'success' && ((github.ref == 'refs/heads/main' && vars.GHCR_DEPLOY_DEV_ENABLED == 'true') || (startsWith(github.ref, 'refs/tags/v') && vars.GHCR_DEPLOY_PROD_ENABLED == 'true')) }}
+    needs: publish-ghcr
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PLATFORM_GITOPS_TOKEN: ${{ secrets.PLATFORM_GITOPS_TOKEN }}
+      APPLICATION: atmo
+      WORKLOAD: web
+      IMAGE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+      IMAGE_ENVIRONMENT: ${{ github.ref_type == 'tag' && 'prod' || 'dev' }}
+    steps:
+      - name: Require the GitOps write token
+        run: |
+          if [ -z "$PLATFORM_GITOPS_TOKEN" ]; then
+            echo "::error::Add the fine-grained PLATFORM_GITOPS_TOKEN secret with Contents: read/write access to lime985340/platform-gitops."
+            exit 1
+          fi
+      - name: Check out GitHub GitOps
+        uses: actions/checkout@v4
+        with:
+          repository: lime985340/platform-gitops
+          ref: main
+          token: ${{ secrets.PLATFORM_GITOPS_TOKEN }}
+          path: platform-gitops
+      - name: Update image tag and commit to GitOps main
+        run: |
+          set -eu
+          cd platform-gitops
+          APPLICATION="$APPLICATION" \
+            WORKLOAD="$WORKLOAD" \
+            ENVIRONMENT="$IMAGE_ENVIRONMENT" \
+            IMAGE_TAG="$IMAGE_TAG" \
+            sh ci/update-image-tag.sh
+          git add "workloads/$APPLICATION/$WORKLOAD/environments/$IMAGE_ENVIRONMENT/kustomization.yaml"
+          if git diff --cached --quiet; then
+            echo "GitOps already points to image tag $IMAGE_TAG"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "chore: deploy $APPLICATION $WORKLOAD $IMAGE_ENVIRONMENT $IMAGE_TAG"
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            git fetch origin main
+            git rebase origin/main
+          done
+          echo "Could not update platform-gitops/main after 5 push attempts" >&2
+          exit 1
