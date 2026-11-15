@@ -17,12 +17,34 @@ on:
         required: false
         type: boolean
         default: false
+      oci_multiarch:
+        description: "Publish a multiarch image for OCI Osaka without running verify tasks"
+        required: false
+        type: boolean
+        default: false
+      oci_source_ref:
+        description: "Branch, tag, or commit to package"
+        required: false
+        type: string
+        default: main
+      oci_environment:
+        description: "Application build profile"
+        required: false
+        type: choice
+        options: [dev, prod]
+        default: dev
+      oci_image_tag:
+        description: "Destination OCI image tag"
+        required: false
+        type: string
+        default: oci-manual
 
 permissions:
   contents: read
 
 jobs:
   verify:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.oci_multiarch == true) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +63,44 @@ jobs:
           VITE_BASE_PATH=/atmo/ VITE_API_BASE_URL=/atmo/api/v1 npm run build
           grep -R -F -q "/atmo/api/v1" dist/assets
           grep -F -q '"/atmo/assets/' dist/index.html
+
+  publish-oci-multiarch:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.oci_multiarch == true }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.oci_source_ref }}
+      - id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Require the Kakao web key
+        env:
+          VITE_KAKAO_APP_KEY: ${{ secrets.VITE_KAKAO_APP_KEY }}
+        run: test -n "$VITE_KAKAO_APP_KEY"
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish OCI multiarch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/lime985340/atmo-web:${{ inputs.oci_image_tag }}
+          build-args: |
+            VITE_API_BASE_URL=${{ inputs.oci_environment == 'prod' && '/atmo/api/v1' || '/dev/atmo/api/v1' }}
+            VITE_BASE_PATH=${{ inputs.oci_environment == 'prod' && '/atmo/' || '/dev/atmo/' }}
+            VITE_KAKAO_APP_KEY=${{ secrets.VITE_KAKAO_APP_KEY }}
 
   publish-ghcr:
     if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
