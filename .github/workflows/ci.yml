@@ -76,6 +76,21 @@ jobs:
           ref: ${{ inputs.oci_source_ref }}
       - id: source
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Build architecture-independent artifacts natively
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("Dockerfile")
+          lines = path.read_text().splitlines()
+          changed = False
+          for index, line in enumerate(lines):
+              if line.startswith("FROM ") and " AS build" in line and not line.startswith("FROM --platform="):
+                  lines[index] = line.replace("FROM ", "FROM --platform=$BUILDPLATFORM ", 1)
+                  changed = True
+          if not changed:
+              raise SystemExit("No architecture-independent build stage found")
+          path.write_text(chr(10).join(lines) + chr(10))
+          PY
       - name: Require the Kakao web key
         env:
           VITE_KAKAO_APP_KEY: ${{ secrets.VITE_KAKAO_APP_KEY }}
